@@ -494,4 +494,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()G qq登录窗口代码提交
+    main()
