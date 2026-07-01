@@ -2,7 +2,10 @@
 """QQ登录整合单文件版本，无需拆分模块，直接运行"""
 import tkinter as tk
 from tkinter import messagebox
+from tkinter import messagebox, scrolledtext
 import bcrypt
+import random
+from datetime import datetime
 
 # ====================== 全局配置 ======================
 HEADER_COLOR = "#12B7F5"
@@ -195,54 +198,78 @@ class RegisterWindow:
             messagebox.showerror("注册失败", f"程序异常：{str(err)}", parent=self.top)
 
 # ====================== 主页窗口类 ======================
+# ====================== 主页窗口类（带聊天侧边栏完整版） ======================
 class MainWindow:
     def __init__(self, root, login_account, user_info):
         try:
             self.root = root
             self.account = login_account
             self.user = user_info
-            self.root.title("QQ主页")
+            self.root.title(f"QQ - {self.user['nickname']}")
+            self.root.geometry(f"{MAIN_W}x{MAIN_H}")
             self.root.resizable(False, False)
-            self._center_window(MAIN_W, MAIN_H)
-            self._build_header()
-            self._build_profile_card()
-            self._build_info_detail()
-            self._build_func_area()
-            self._build_logout_btn()
+
+            # 聊天全局变量
+            self.current_page = "home"
+            self.chat_history = {}
+            self.friend_list = ["小明", "管理员", "QQ用户"]
+
+            # 左侧侧边栏
+            self.side_frame = tk.Frame(self.root, bg="#2C3E50", width=120)
+            self.side_frame.pack(side="left", fill="y")
+            self.side_frame.pack_propagate(False)
+
+            # 侧边按钮
+            tk.Button(self.side_frame, text="主页", width=12, height=2,
+                      command=self.show_home_page).pack(pady=8)
+            tk.Button(self.side_frame, text="开始聊天", width=12, height=2,
+                      command=self.show_chat_page).pack(pady=8)
+            tk.Button(self.side_frame, text="退出登录", width=12, height=2,
+                      bg=LOGOUT_BG, fg="white", command=self._logout).pack(pady=30)
+
+            # 右侧主内容容器
+            self.main_container = tk.Frame(self.root, bg=BG_COLOR)
+            self.main_container.pack(side="right", fill="both", expand=True)
+
+            # 默认打开主页
+            self.show_home_page()
+
         except Exception as e:
             messagebox.showerror("页面异常", f"主页初始化失败：{str(e)}")
 
-    def _center_window(self, w, h):
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
-        x = (screen_w - w) // 2
-        y = (screen_h - h) // 2
-        self.root.geometry(f"{w}x{h}+{x}+{y}")
+    def clear_main_container(self):
+        """清空右侧区域，切换页面用"""
+        for widget in self.main_container.winfo_children():
+            widget.destroy()
 
-    def _build_header(self):
-        header = tk.Frame(self.root, bg=HEADER_COLOR, height=120)
+    def show_home_page(self):
+        """渲染个人主页"""
+        self.current_page = "home"
+        self.clear_main_container()
+
+        # 顶部蓝色标题栏
+        header = tk.Frame(self.main_container, bg=HEADER_COLOR, height=120)
         header.pack(fill="x")
         header.pack_propagate(False)
-        close_btn = tk.Label(header, text="✕", fg="white", bg=HEADER_COLOR, font=FONT_SMALL, cursor="hand2")
-        close_btn.place(x=390, y=8)
-        close_btn.bind("<Button-1>", lambda e: self.root.quit())
-        tk.Label(header, text="QQ主页", fg="white", bg=HEADER_COLOR, font=FONT_TITLE).place(x=20, y=15)
-        tk.Label(header, text=f"当前登录账号：{self.account}", fg="#E8F7FF", bg=HEADER_COLOR, font=FONT_SUBTITLE).place(x=20, y=55)
+        tk.Label(header, text="QQ主页", fg="white", bg=HEADER_COLOR, font=("Microsoft YaHei",28,"bold")).place(x=20,y=15)
+        tk.Label(header, text=f"当前登录账号：{self.account}", fg="#E8F4FD", bg=HEADER_COLOR, font=FONT_SUBTITLE).place(x=20,y=65)
+        tk.Button(header, text="×", fg="white", bg=HEADER_COLOR, font=("Arial",16), relief="flat",
+                  command=self.root.quit).place(x=370,y=10)
 
-    def _build_profile_card(self):
-        card = tk.Frame(self.root, bg=CARD_BG, height=130)
-        card.pack(fill="x", padx=20, pady=(15, 5))
-        card.pack_propagate(False)
-        tk.Label(card, text="🐧", bg=CARD_BG, font=FONT_EMOJI).place(x=20, y=25)
-        tk.Label(card, text=self.user["nickname"], bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei",16,"bold")).place(x=110, y=30)
-        tk.Label(card, text=f"签名：{self.user['signature']}", bg=CARD_BG, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).place(x=110, y=70)
-        tk.Label(card, text="● 在线", bg=CARD_BG, fg=ONLINE_GREEN, font=FONT_SMALL).place(x=110, y=95)
+        # 头像卡片
+        card = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        card.pack(fill="x", padx=20, pady=15)
+        tk.Label(card, text="🐧", font=FONT_EMOJI, bg=CARD_BG).pack(side="left")
+        info_frame = tk.Frame(card, bg=CARD_BG)
+        info_frame.pack(side="left", padx=15)
+        tk.Label(info_frame, text=self.user["nickname"], bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei",16,"bold")).pack(anchor="w")
+        tk.Label(info_frame, text=f"签名：{self.user['signature']}", bg=CARD_BG, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w", pady=5)
+        tk.Label(info_frame, text="● 在线", bg=CARD_BG, fg=ONLINE_GREEN, font=FONT_SMALL).pack(anchor="w")
 
-    def _build_info_detail(self):
-        detail = tk.Frame(self.root, bg=CARD_BG)
-        detail.pack(fill="x", padx=20, pady=(5, 10))
-        tk.Label(detail, text="个人信息", bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei",12,"bold")).pack(anchor="w", padx=15, pady=(10,5))
-        tk.Frame(detail, bg=DIVIDER_GRAY, height=1).pack(fill="x", padx=15)
+        # 个人信息面板
+        detail = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        detail.pack(fill="x", padx=20)
+        tk.Label(detail, text="个人信息", bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei",12,"bold")).pack(anchor="w", pady=(0,10))
         info_list = [
             ("账    号", self.account),
             ("昵    称", self.user["nickname"]),
@@ -253,39 +280,122 @@ class MainWindow:
         ]
         for label, val in info_list:
             row = tk.Frame(detail, bg=CARD_BG)
-            row.pack(fill="x", padx=15, pady=6)
-            tk.Label(row, text=label, bg=CARD_BG, fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL, width=10, anchor="w").pack(side="left")
-            tk.Label(row, text=val, bg=CARD_BG, fg=TEXT_BLACK, font=FONT_NORMAL, anchor="w").pack(side="left", fill="x", expand=True)
+            row.pack(fill="x", pady=4)
+            tk.Label(row, text=label, bg=CARD_BG, fg=TEXT_GRAY, font=FONT_NORMAL, width=10, anchor="w").pack(side="left")
+            tk.Label(row, text=val, bg=CARD_BG, fg=TEXT_BLACK, font=FONT_NORMAL, anchor="w").pack(side="left")
 
-    def _build_func_area(self):
-        func_frame = tk.Frame(self.root, bg=CARD_BG)
-        func_frame.pack(fill="x", padx=20, pady=(0,10))
-        tk.Label(func_frame, text="快捷功能", bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei",12,"bold")).pack(anchor="w", padx=15, pady=(10,5))
-        tk.Frame(func_frame, bg=DIVIDER_GRAY, height=1).pack(fill="x", padx=15)
+        # 快捷功能区
+        func_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        func_frame.pack(fill="x", padx=20, pady=15)
+        tk.Label(func_frame, text="快捷功能", bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei",12,"bold")).pack(anchor="w", pady=(0,10))
         func_items = [
-            ("👥  我的好友", "好友列表演示页面"),
-            ("💬  我的消息", "消息列表演示页面"),
-            ("📝  我的动态", "动态发布页面"),
-            ("⚙️  系统设置", "账号与隐私设置"),
+            ("👥  我的好友", lambda: messagebox.showinfo("提示","好友功能开发中")),
+            ("💬  我的消息", lambda: self.show_chat_page()),
+            ("📝  我的动态", lambda: messagebox.showinfo("提示","动态功能开发中")),
+            ("⚙️  系统设置", lambda: messagebox.showinfo("提示","设置功能开发中")),
         ]
-        for text, tip in func_items:
-            lab = tk.Label(func_frame, text=text, bg=CARD_BG, fg=TEXT_BLACK, font=FONT_NORMAL, cursor="hand2", anchor="w")
-            lab.pack(fill="x", padx=15, pady=8)
-            lab.bind("<Button-1>", lambda e, t=tip: messagebox.showinfo("功能提示", t))
+        for text, cmd in func_items:
+            tk.Button(func_frame, text=text, bg=CARD_BG, relief="flat", anchor="w",
+                      font=FONT_NORMAL, command=cmd).pack(fill="x", pady=3)
 
-    def _build_logout_btn(self):
-        tk.Button(
-            self.root, text="退出登录", command=self._logout,
-            bg=LOGOUT_BG, fg="white", activebackground=LOGOUT_ACTIVE, activeforeground="white",
-            font=FONT_LOGOUT, relief="flat", cursor="hand2", bd=0
-        ).pack(fill="x", padx=40, ipady=6, pady=(5,15))
+    def show_chat_page(self):
+        """聊天页面"""
+        self.current_page = "chat"
+        self.clear_main_container()
+
+        # 左侧好友列表
+        left_box = tk.Frame(self.main_container, bg="#EEEEEE", width=120)
+        left_box.pack(side="left", fill="y")
+        tk.Label(left_box, text="好友列表", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=10)
+        self.chat_listbox = tk.Listbox(left_box, font=FONT_NORMAL)
+        self.chat_listbox.pack(fill="both", expand=True, padx=5, pady=5)
+        for name in self.friend_list:
+            self.chat_listbox.insert(tk.END, name)
+        self.chat_listbox.bind("<<ListboxSelect>>", self.load_target_chat)
+
+        # 右侧聊天区域
+        chat_area = tk.Frame(self.main_container, bg="white")
+        chat_area.pack(side="right", fill="both", expand=True, padx=5)
+        self.chat_title = tk.Label(chat_area, text="请选择好友开始聊天", bg="white", font=FONT_TITLE)
+        self.chat_title.pack(fill="x", pady=10)
+
+        # 消息滚动框
+        self.msg_display = scrolledtext.ScrolledText(chat_area, bg=BG_COLOR, fg=TEXT_BLACK,
+                                                     font=FONT_NORMAL, wrap="word", state="disabled")
+        self.msg_display.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # 输入栏
+        input_frame = tk.Frame(chat_area, bg="white")
+        input_frame.pack(fill="x", padx=10, pady=10)
+        self.msg_input = tk.Entry(input_frame, font=FONT_NORMAL, highlightthickness=1,
+                                  highlightcolor=HEADER_COLOR, highlightbackground=INPUT_BORDER)
+        self.msg_input.pack(side="left", fill="x", expand=True, ipady=5)
+        self.msg_input.bind("<Return>", lambda e: self.send_chat_msg())
+        tk.Button(input_frame, text="发送", bg=BTN_COLOR, fg="white", command=self.send_chat_msg).pack(side="right", padx=5)
+
+    def load_target_chat(self, event):
+        """选中好友加载聊天记录"""
+        sel = self.chat_listbox.curselection()
+        if not sel:
+            return
+        target_name = self.chat_listbox.get(sel[0])
+        self.current_chat_target = target_name
+        self.chat_title.config(text=f"和【{target_name}】聊天")
+
+        # 初始化空记录
+        if target_name not in self.chat_history:
+            self.chat_history[target_name] = []
+
+        # 刷新消息框
+        self.msg_display.config(state="normal")
+        self.msg_display.delete(1.0, tk.END)
+        for msg in self.chat_history[target_name]:
+            self.msg_display.insert(tk.END, f"[{msg['time']}] {msg['sender']}：{msg['content']}\n")
+        self.msg_display.config(state="disabled")
+        self.msg_display.see(tk.END)
+
+    def send_chat_msg(self):
+        """发送消息 + 自动回复"""
+        if not hasattr(self, "current_chat_target"):
+            messagebox.showwarning("提示", "请先选择好友！")
+            return
+        text = self.msg_input.get().strip()
+        if not text:
+            return
+
+        target = self.current_chat_target
+        now_time = datetime.now().strftime("%H:%M")
+        # 我方消息
+        my_msg = {"sender": self.user["nickname"], "content": text, "time": now_time}
+        self.chat_history[target].append(my_msg)
+
+        # 界面更新
+        self.msg_display.config(state="normal")
+        self.msg_display.insert(tk.END, f"[{now_time}] 我：{text}\n")
+        self.msg_display.config(state="disabled")
+        self.msg_input.delete(0, tk.END)
+
+        # 延迟自动回复
+        self.root.after(1000, lambda: self.auto_reply(target))
+
+    def auto_reply(self, target_name):
+        """模拟好友自动回复"""
+        reply_pool = ["好的收到！", "明白了~", "哈哈有意思", "稍等我看看", "没问题！", "了解~"]
+        reply_txt = random.choice(reply_pool)
+        now_time = datetime.now().strftime("%H:%M")
+        reply_msg = {"sender": target_name, "content": reply_txt, "time": now_time}
+        self.chat_history[target_name].append(reply_msg)
+
+        self.msg_display.config(state="normal")
+        self.msg_display.insert(tk.END, f"[{now_time}] {target_name}：{reply_txt}\n")
+        self.msg_display.config(state="disabled")
+        self.msg_display.see(tk.END)
 
     def _logout(self):
         confirm = messagebox.askyesno("确认退出", "确定要退出当前账号返回登录页？")
         if confirm:
             self.root.destroy()
             run_login_window()
-
 # ====================== 登录窗口主类 ======================
 class QQLoginWindow:
     def __init__(self, root):
@@ -396,6 +506,8 @@ class QQLoginWindow:
             messagebox.showinfo("登录成功", f"欢迎 {user_data['nickname']}！正在进入主页")
             self.root.destroy()
             main_root = tk.Tk()
+            MainWindow(main_root, account, user_data)
+            main_root.mainloop()
         except Exception as err:
             messagebox.showerror("登录异常", f"程序出错：{str(err)}")
 
