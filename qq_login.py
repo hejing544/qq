@@ -396,7 +396,8 @@ class QQLoginWindow:
             messagebox.showinfo("登录成功", f"欢迎 {user_data['nickname']}！正在进入主页")
             self.root.destroy()
             main_root = tk.Tk()
-            MainWindow(main_root, account, user_data)
+            from main_window import MainWindow as ChatMainWindow
+ChatMainWindow(main_root, account, user_data)
             main_root.mainloop()
         except Exception as err:
             messagebox.showerror("登录异常", f"程序出错：{str(err)}")
@@ -404,6 +405,7 @@ class QQLoginWindow:
 def run_login_window():
     root = tk.Tk()
     QQLoginWindow(root)
+
     root.mainloop()
 
 if __name__ == "__main__":
