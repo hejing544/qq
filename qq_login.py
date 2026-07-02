@@ -6,7 +6,8 @@ from tkinter import messagebox, scrolledtext
 import bcrypt
 import random
 from datetime import datetime
-
+import json
+import os
 # ====================== 全局配置 ======================
 HEADER_COLOR = "#12B7F5"
 BG_COLOR = "#F5F6FA"
@@ -93,7 +94,20 @@ def get_user_info(account: str):
 
 def account_exists(account: str) -> bool:
     return account in USER_DB
+# 聊天记录文件路径
+CHAT_FILE = "chat_record.json"
 
+def load_chat_data():
+    """读取本地聊天记录"""
+    if os.path.exists(CHAT_FILE):
+        with open(CHAT_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_chat_data(chat_dict):
+    """保存聊天记录到本地"""
+    with open(CHAT_FILE, "w", encoding="utf-8") as f:
+        json.dump(chat_dict, f, ensure_ascii=False, indent=2)
 # ====================== 注册窗口类 ======================
 class RegisterWindow:
     def __init__(self, parent_root):
@@ -211,7 +225,9 @@ class MainWindow:
 
             # 聊天全局变量
             self.current_page = "home"
-            self.chat_history = {}
+            # 原来：self.chat_history = {}
+# 替换为
+            self.chat_history = load_chat_data()
             self.friend_list = ["小明", "管理员", "QQ用户"]
 
             # 左侧侧边栏
@@ -293,45 +309,47 @@ class MainWindow:
             ("💬  我的消息", lambda: self.show_chat_page()),
             ("📝  我的动态", lambda: messagebox.showinfo("提示","动态功能开发中")),
             ("⚙️  系统设置", lambda: messagebox.showinfo("提示","设置功能开发中")),
+            ("✏️  修改个人资料", self.edit_profile_pop)
         ]
         for text, cmd in func_items:
             tk.Button(func_frame, text=text, bg=CARD_BG, relief="flat", anchor="w",
                       font=FONT_NORMAL, command=cmd).pack(fill="x", pady=3)
+            def edit_profile_pop(self):
+    
 
-    def show_chat_page(self):
         """聊天页面"""
-        self.current_page = "chat"
-        self.clear_main_container()
+            self.current_page = "chat"
+            self.clear_main_container()
 
         # 左侧好友列表
-        left_box = tk.Frame(self.main_container, bg="#EEEEEE", width=120)
-        left_box.pack(side="left", fill="y")
-        tk.Label(left_box, text="好友列表", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=10)
-        self.chat_listbox = tk.Listbox(left_box, font=FONT_NORMAL)
-        self.chat_listbox.pack(fill="both", expand=True, padx=5, pady=5)
-        for name in self.friend_list:
+            left_box = tk.Frame(self.main_container, bg="#EEEEEE", width=120)
+            left_box.pack(side="left", fill="y")
+            tk.Label(left_box, text="好友列表", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=10)
+            self.chat_listbox = tk.Listbox(left_box, font=FONT_NORMAL)
+            self.chat_listbox.pack(fill="both", expand=True, padx=5, pady=5)
+            for name in self.friend_list:
             self.chat_listbox.insert(tk.END, name)
-        self.chat_listbox.bind("<<ListboxSelect>>", self.load_target_chat)
+            self.chat_listbox.bind("<<ListboxSelect>>", self.load_target_chat)
 
         # 右侧聊天区域
-        chat_area = tk.Frame(self.main_container, bg="white")
-        chat_area.pack(side="right", fill="both", expand=True, padx=5)
-        self.chat_title = tk.Label(chat_area, text="请选择好友开始聊天", bg="white", font=FONT_TITLE)
-        self.chat_title.pack(fill="x", pady=10)
+            chat_area = tk.Frame(self.main_container, bg="white")
+            chat_area.pack(side="right", fill="both", expand=True, padx=5)
+            self.chat_title = tk.Label(chat_area, text="请选择好友开始聊天", bg="white", font=FONT_TITLE)
+            self.chat_title.pack(fill="x", pady=10)
 
         # 消息滚动框
-        self.msg_display = scrolledtext.ScrolledText(chat_area, bg=BG_COLOR, fg=TEXT_BLACK,
+            self.msg_display = scrolledtext.ScrolledText(chat_area, bg=BG_COLOR, fg=TEXT_BLACK,
                                                      font=FONT_NORMAL, wrap="word", state="disabled")
-        self.msg_display.pack(fill="both", expand=True, padx=10, pady=5)
+            self.msg_display.pack(fill="both", expand=True, padx=10, pady=5)
 
         # 输入栏
-        input_frame = tk.Frame(chat_area, bg="white")
-        input_frame.pack(fill="x", padx=10, pady=10)
-        self.msg_input = tk.Entry(input_frame, font=FONT_NORMAL, highlightthickness=1,
+            input_frame = tk.Frame(chat_area, bg="white")
+            input_frame.pack(fill="x", padx=10, pady=10)
+            elf.msg_input = tk.Entry(input_frame, font=FONT_NORMAL, highlightthickness=1,
                                   highlightcolor=HEADER_COLOR, highlightbackground=INPUT_BORDER)
-        self.msg_input.pack(side="left", fill="x", expand=True, ipady=5)
-        self.msg_input.bind("<Return>", lambda e: self.send_chat_msg())
-        tk.Button(input_frame, text="发送", bg=BTN_COLOR, fg="white", command=self.send_chat_msg).pack(side="right", padx=5)
+            self.msg_input.pack(side="left", fill="x", expand=True, ipady=5)
+            self.msg_input.bind("<Return>", lambda e: self.send_chat_msg())
+            tk.Button(input_frame, text="发送", bg=BTN_COLOR, fg="white", command=self.send_chat_msg).pack(side="right", padx=5)
 
     def load_target_chat(self, event):
         """选中好友加载聊天记录"""
@@ -353,7 +371,10 @@ class MainWindow:
             self.msg_display.insert(tk.END, f"[{msg['time']}] {msg['sender']}：{msg['content']}\n")
         self.msg_display.config(state="disabled")
         self.msg_display.see(tk.END)
-
+        self.msg_display.config(state="disabled")
+        self.msg_display.see(tk.END)
+# 新增下面一行，每次发消息自动保存
+        save_chat_data(self.chat_history)    
     def send_chat_msg(self):
         """发送消息 + 自动回复"""
         if not hasattr(self, "current_chat_target"):
@@ -390,6 +411,52 @@ class MainWindow:
         self.msg_display.insert(tk.END, f"[{now_time}] {target_name}：{reply_txt}\n")
         self.msg_display.config(state="disabled")
         self.msg_display.see(tk.END)
+        save_chat_data(self.chat_history)
+
+    def edit_profile_pop(self):
+         """修改资料弹窗"""
+         pop = tk.Toplevel(self.root)
+         pop.title("修改个人资料")
+         pop.geometry("320x320")
+         pop.transient(self.root)
+    
+    # 头像选择
+         tk.Label(pop, text="选择头像：").pack()
+         avatar_frame = tk.Frame(pop)
+         avatar_frame.pack(pady=3)
+         self.avatar_select = tk.StringVar(value="🐧")
+         for ava in AVATAR_LIST:
+            tk.Radiobutton(avatar_frame, text=ava, variable=self.avatar_select, value=ava, font=("Arial",16)).pack(side="left")
+
+            tk.Label(pop, text="昵称：").pack()
+         nick_var = tk.StringVar(value=self.user["nickname"])
+         tk.Entry(pop, textvariable=nick_var, width=30).pack(pady=4)
+
+         tk.Label(pop, text="个性签名：").pack()
+         sign_var = tk.StringVar(value=self.user["signature"])
+         tk.Entry(pop, textvariable=sign_var, width=30).pack(pady=4)
+
+         tk.Label(pop, text="城市：").pack()
+    city_var = tk.StringVar(value=self.user["city"])
+    tk.Entry(pop, textvariable=city_var, width=30).pack(pady=4)
+
+    def save_info():
+         new_nick = nick_var.get().strip()
+         new_sign = sign_var.get().strip()
+         new_city = city_var.get().strip()
+         new_ava = self.avatar_select.get()
+         if new_nick:
+            self.user["nickname"] = new_nick
+         if new_sign:
+            self.user["signature"] = new_sign
+         if new_city:
+            self.user["city"] = new_city
+         self.user["avatar"] = new_ava
+         messagebox.showinfo("成功", "资料修改完成！")
+         pop.destroy()
+        # 刷新主页
+         self.show_home_page()
+    tk.Button(pop, text="保存修改", bg=BTN_COLOR, fg="white", command=save_info).pack(pady=15)
 
     def _logout(self):
         confirm = messagebox.askyesno("确认退出", "确定要退出当前账号返回登录页？")
