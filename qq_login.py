@@ -70,15 +70,22 @@ DEFAULT_USERS = {
 }
 
 def load_user_db():
-    """从本地文件加载用户数据库，若文件不存在则使用默认用户"""
+    """从本地文件加载用户数据库，若文件不存在或损坏则使用默认用户"""
     if os.path.exists(USER_DB_FILE):
-        with open(USER_DB_FILE, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-        db = {}
-        for account, info in raw.items():
-            info["hash_pwd"] = info["hash_pwd"].encode("utf-8")
-            db[account] = info
-        return db
+        try:
+            with open(USER_DB_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            db = {}
+            for account, info in raw.items():
+                info["hash_pwd"] = info["hash_pwd"].encode("utf-8")
+                db[account] = info
+            return db
+        except Exception:
+            # 文件损坏时删除损坏文件，使用默认用户
+            try:
+                os.remove(USER_DB_FILE)
+            except Exception:
+                pass
     return {account: dict(info) for account, info in DEFAULT_USERS.items()}
 
 def save_user_db(db):
