@@ -438,42 +438,89 @@ class MainWindow:
         save_chat_data(self.chat_history)
 
     def edit_profile_pop(self):
-        """修改资料弹窗"""
+        """修改资料弹窗（含性别、年龄、地区、姓名等，自动保存到文件）"""
         pop = tk.Toplevel(self.root)
         pop.title("修改个人资料")
-        pop.geometry("320x320")
+        pop.geometry("360x420")
         pop.transient(self.root)
+        pop.resizable(False, False)
+
+        # 头像
+        tk.Label(pop, text="头像：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(15, 0))
+        avatar_var = tk.StringVar(value=self.user.get("avatar", "🐧"))
+        avatars = ["🐧", "🐶", "🐱", "🐼", "🐨", "🦊", "🐰", "🐯"]
+        avatar_frame = tk.Frame(pop)
+        avatar_frame.pack(pady=3)
+        for ava in avatars:
+            tk.Radiobutton(avatar_frame, text=ava, variable=avatar_var, value=ava,
+                           font=("Segoe UI Emoji", 16)).pack(side="left")
 
         # 昵称
-        tk.Label(pop, text="昵称：").pack()
+        tk.Label(pop, text="昵称：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
         nick_var = tk.StringVar(value=self.user["nickname"])
-        tk.Entry(pop, textvariable=nick_var, width=30).pack(pady=4)
+        tk.Entry(pop, textvariable=nick_var, width=30, font=FONT_NORMAL).pack(pady=3)
 
-        # 个性签名
-        tk.Label(pop, text="个性签名：").pack()
-        sign_var = tk.StringVar(value=self.user["signature"])
-        tk.Entry(pop, textvariable=sign_var, width=30).pack(pady=4)
+        # 性别
+        tk.Label(pop, text="性别：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
+        gender_var = tk.StringVar(value=self.user.get("gender", "保密"))
+        gender_frame = tk.Frame(pop)
+        gender_frame.pack(pady=3)
+        for g in ["男", "女", "保密"]:
+            tk.Radiobutton(gender_frame, text=g, variable=gender_var, value=g, font=FONT_NORMAL).pack(side="left", padx=5)
+
+        # 年龄
+        tk.Label(pop, text="年龄：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
+        age_var = tk.StringVar(value=self.user.get("age", "未知"))
+        tk.Entry(pop, textvariable=age_var, width=30, font=FONT_NORMAL).pack(pady=3)
 
         # 城市
-        tk.Label(pop, text="城市：").pack()
-        city_var = tk.StringVar(value=self.user["city"])
-        tk.Entry(pop, textvariable=city_var, width=30).pack(pady=4)
+        tk.Label(pop, text="城市：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
+        city_var = tk.StringVar(value=self.user.get("city", "未知"))
+        tk.Entry(pop, textvariable=city_var, width=30, font=FONT_NORMAL).pack(pady=3)
+
+        # 个性签名
+        tk.Label(pop, text="个性签名：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
+        sign_var = tk.StringVar(value=self.user.get("signature", ""))
+        tk.Entry(pop, textvariable=sign_var, width=30, font=FONT_NORMAL).pack(pady=3)
 
         def save_info():
+            # 从界面获取值
+            new_avatar = avatar_var.get()
             new_nick = nick_var.get().strip()
-            new_sign = sign_var.get().strip()
+            new_gender = gender_var.get()
+            new_age = age_var.get().strip()
             new_city = city_var.get().strip()
+            new_sign = sign_var.get().strip()
+
+            # 更新 self.user 对象
+            self.user["avatar"] = new_avatar
             if new_nick:
                 self.user["nickname"] = new_nick
-            if new_sign:
-                self.user["signature"] = new_sign
+            if new_gender:
+                self.user["gender"] = new_gender
+            if new_age:
+                self.user["age"] = new_age
             if new_city:
                 self.user["city"] = new_city
+            if new_sign:
+                self.user["signature"] = new_sign
+
+            # 同步更新全局 USER_DB 并保存到文件
+            if self.account in USER_DB:
+                USER_DB[self.account]["nickname"] = self.user["nickname"]
+                USER_DB[self.account]["gender"] = self.user["gender"]
+                USER_DB[self.account]["age"] = self.user["age"]
+                USER_DB[self.account]["city"] = self.user["city"]
+                USER_DB[self.account]["signature"] = self.user["signature"]
+                USER_DB[self.account]["avatar"] = self.user["avatar"]
+                save_user_db(USER_DB)
+
             messagebox.showinfo("成功", "资料修改完成！")
             pop.destroy()
             self.show_home_page()
 
-        tk.Button(pop, text="保存修改", bg=BTN_COLOR, fg="white", command=save_info).pack(pady=15)
+        tk.Button(pop, text="保存修改", bg=BTN_COLOR, fg="white",
+                  font=FONT_BTN, command=save_info).pack(pady=15)
 
     def _logout(self):
         confirm = messagebox.askyesno("确认退出", "确定要退出当前账号返回登录页？")
