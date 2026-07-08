@@ -26,3 +26,5 @@ run_log.txt
 # OS
 .DS_Store
 Thumbs.db
+
+user_db.json
