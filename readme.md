@@ -19,7 +19,7 @@ qq/
 ├── qq_login.py         # 单文件整合版本（可直接运行）
 ├── login_window.py     # 登录窗口模块
 ├── register_window.py  # 注册窗口模块
-├── main_window.py      # 主窗口/聊天窗口模块
+├── chat_window.py       # 主窗口/聊天窗口模块
 ├── user_db.py          # 用户数据库模块
 ├── chat_record.json    # 聊天记录文件（运行时自动生成）
 ├── .gitignore          # Git 忽略规则

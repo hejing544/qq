@@ -439,5 +439,17 @@ class MainWindow:
         if messagebox.askyesno('确认退出', '确定要退出登录吗？'):
             self.root.destroy()
             # 重新打开登录窗口
-            import qq_login
+            import tkinter as tk
+            from login_window import QQLoginWindow
+            new_root = tk.Tk()
+            QQLoginWindow(new_root)
+            new_root.mainloop()
+
+
+if __name__ == "__main__":
+    import tkinter as tk
+    from login_window import QQLoginWindow
+    root = tk.Tk()
+    QQLoginWindow(root)
+    root.mainloop()
         

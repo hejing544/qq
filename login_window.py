@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import messagebox
 from user_db import verify_user
 from register_window import RegisterWindow
-from main_window import MainWindow
+from chat_window import MainWindow
 class QQLoginWindow:
     def __init__(self, root):
         self.root = root
