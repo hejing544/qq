@@ -62,14 +62,15 @@ class MainWindow:
         user_frame = tk.Frame(sidebar, bg=self.sidebar_color)
         user_frame.pack(fill='x', padx=10, pady=20)
         
-        avatar = tk.Label(user_frame, text='👤', bg=self.sidebar_color, fg='white',
-                         font=('Microsoft YaHei', 24))
-        avatar.pack()
-        
-        nickname = tk.Label(user_frame, text=self.user_info['nickname'], 
-                           bg=self.sidebar_color, fg='white',
-                           font=('Microsoft YaHei', 12, 'bold'))
-        nickname.pack(pady=5)
+        self.sidebar_avatar = tk.Label(user_frame, text=self.user_info.get('avatar', '👤'),
+                                       bg=self.sidebar_color, fg='white',
+                                       font=('Microsoft YaHei', 24))
+        self.sidebar_avatar.pack()
+
+        self.sidebar_nickname = tk.Label(user_frame, text=self.user_info['nickname'],
+                                         bg=self.sidebar_color, fg='white',
+                                         font=('Microsoft YaHei', 12, 'bold'))
+        self.sidebar_nickname.pack(pady=5)
         
         account = tk.Label(user_frame, text=f'账号: {self.account}',
                           bg=self.sidebar_color, fg='#BDC3C7',
@@ -82,24 +83,24 @@ class MainWindow:
         
         # 导航按钮
         self.home_btn = tk.Button(sidebar, text='🏠 主页', command=self._show_home_page,
-                                 bg='transparent', fg='white', activebackground='#34495E',
+                                 bg=self.sidebar_color, fg='white', activebackground='#34495E',
                                  activeforeground='white', font=('Microsoft YaHei', 11),
                                  relief='flat', cursor='hand2', bd=0, anchor='w')
         self.home_btn.pack(fill='x', padx=10, pady=5)
-        
+
         self.chat_btn = tk.Button(sidebar, text='💬 聊天', command=self._show_chat_page,
-                                 bg='transparent', fg='white', activebackground='#34495E',
+                                 bg=self.sidebar_color, fg='white', activebackground='#34495E',
                                  activeforeground='white', font=('Microsoft YaHei', 11),
                                  relief='flat', cursor='hand2', bd=0, anchor='w')
         self.chat_btn.pack(fill='x', padx=10, pady=5)
-        
+
         # 分隔线
         separator2 = tk.Frame(sidebar, bg='#34495E', height=1)
         separator2.pack(fill='x', padx=10, pady=10)
-        
+
         # 退出按钮
         logout_btn = tk.Button(sidebar, text='🚪 退出登录', command=self._logout,
-                              bg='transparent', fg='#E74C3C', activebackground='#34495E',
+                              bg=self.sidebar_color, fg='#E74C3C', activebackground='#34495E',
                               activeforeground='#E74C3C', font=('Microsoft YaHei', 11),
                               relief='flat', cursor='hand2', bd=0, anchor='w')
         logout_btn.pack(fill='x', padx=10, pady=5)
@@ -114,7 +115,7 @@ class MainWindow:
         
         # 更新按钮状态
         self.home_btn.config(bg='#34495E')
-        self.chat_btn.config(bg='transparent')
+        self.chat_btn.config(bg=self.sidebar_color)
         
         # 主页内容
         home_frame = tk.Frame(self.content_frame, bg=self.bg_color)
@@ -179,7 +180,7 @@ class MainWindow:
         self._clear_content()
         
         # 更新按钮状态
-        self.home_btn.config(bg='transparent')
+        self.home_btn.config(bg=self.sidebar_color)
         self.chat_btn.config(bg='#34495E')
         
         # 聊天页面
@@ -347,7 +348,92 @@ class MainWindow:
         self.root.after(1000, lambda: self._append_message(message['sender'], message['content'], message['time']))
     
     def _edit_profile(self):
-        messagebox.showinfo('提示', '修改资料功能开发中...')
+        """修改资料弹窗（含性别、年龄、城市、签名、头像等，自动保存到文件）"""
+        import user_db
+
+        pop = tk.Toplevel(self.root)
+        pop.title("修改个人资料")
+        pop.geometry("400x480")
+        pop.transient(self.root)
+        pop.resizable(False, False)
+        pop.grab_set()  # 模态弹窗
+
+        # 头像选择
+        tk.Label(pop, text="头像：", font=('Microsoft YaHei', 11)).pack(anchor="w", padx=30, pady=(15, 0))
+        avatar_var = tk.StringVar(value=self.user_info.get("avatar", "🐧"))
+        avatars = ["🐧", "🐶", "🐱", "🐼", "🐨", "🦊", "🐰", "🐯"]
+        avatar_frame = tk.Frame(pop)
+        avatar_frame.pack(pady=3)
+        for ava in avatars:
+            tk.Radiobutton(avatar_frame, text=ava, variable=avatar_var, value=ava,
+                           font=("Segoe UI Emoji", 16)).pack(side="left")
+
+        # 昵称
+        tk.Label(pop, text="昵称：", font=('Microsoft YaHei', 11)).pack(anchor="w", padx=30, pady=(5, 0))
+        nick_var = tk.StringVar(value=self.user_info["nickname"])
+        tk.Entry(pop, textvariable=nick_var, width=30, font=('Microsoft YaHei', 11)).pack(pady=3)
+
+        # 性别
+        tk.Label(pop, text="性别：", font=('Microsoft YaHei', 11)).pack(anchor="w", padx=30, pady=(5, 0))
+        gender_var = tk.StringVar(value=self.user_info.get("gender", "保密"))
+        gender_frame = tk.Frame(pop)
+        gender_frame.pack(pady=3)
+        for g in ["男", "女", "保密"]:
+            tk.Radiobutton(gender_frame, text=g, variable=gender_var, value=g,
+                           font=('Microsoft YaHei', 11)).pack(side="left", padx=5)
+
+        # 年龄
+        tk.Label(pop, text="年龄：", font=('Microsoft YaHei', 11)).pack(anchor="w", padx=30, pady=(5, 0))
+        age_var = tk.StringVar(value=self.user_info.get("age", "未知"))
+        tk.Entry(pop, textvariable=age_var, width=30, font=('Microsoft YaHei', 11)).pack(pady=3)
+
+        # 城市
+        tk.Label(pop, text="城市：", font=('Microsoft YaHei', 11)).pack(anchor="w", padx=30, pady=(5, 0))
+        city_var = tk.StringVar(value=self.user_info.get("city", "未知"))
+        tk.Entry(pop, textvariable=city_var, width=30, font=('Microsoft YaHei', 11)).pack(pady=3)
+
+        # 个性签名
+        tk.Label(pop, text="个性签名：", font=('Microsoft YaHei', 11)).pack(anchor="w", padx=30, pady=(5, 0))
+        sign_var = tk.StringVar(value=self.user_info.get("signature", ""))
+        tk.Entry(pop, textvariable=sign_var, width=30, font=('Microsoft YaHei', 11)).pack(pady=3)
+
+        def save_info():
+            """保存修改到内存和文件"""
+            try:
+                new_avatar = avatar_var.get()
+                new_nick = nick_var.get().strip()
+                new_gender = gender_var.get()
+                new_age = age_var.get().strip()
+                new_city = city_var.get().strip()
+                new_sign = sign_var.get().strip()
+
+                # 更新内存中的用户信息
+                self.user_info["avatar"] = new_avatar
+                if new_nick:
+                    self.user_info["nickname"] = new_nick
+                self.user_info["gender"] = new_gender
+                if new_age:
+                    self.user_info["age"] = new_age
+                if new_city:
+                    self.user_info["city"] = new_city
+                if new_sign:
+                    self.user_info["signature"] = new_sign
+
+                # 保存到文件
+                user_db.save_user_db()
+
+                # 刷新侧边栏的用户信息显示
+                self.sidebar_nickname.config(text=self.user_info["nickname"])
+                self.sidebar_avatar.config(text=self.user_info.get("avatar", "👤"))
+
+                messagebox.showinfo("成功", "资料修改完成！")
+                pop.destroy()
+                self._show_home_page()
+            except Exception as e:
+                messagebox.showerror("保存失败", f"修改资料时发生错误：{str(e)}")
+
+        tk.Button(pop, text="保存修改", bg=self.btn_color, fg="white",
+                  font=('Microsoft YaHei', 12, 'bold'), command=save_info).pack(pady=15)
     
     def _logout(self):
         if messagebox.askyesno('确认退出', '确定要退出登录吗？'):

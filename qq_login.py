@@ -449,9 +449,10 @@ class MainWindow:
         """修改资料弹窗（含性别、年龄、地区、姓名等，自动保存到文件）"""
         pop = tk.Toplevel(self.root)
         pop.title("修改个人资料")
-        pop.geometry("360x420")
+        pop.geometry("400x480")
         pop.transient(self.root)
         pop.resizable(False, False)
+        pop.grab_set()  # 模态弹窗
 
         # 头像
         tk.Label(pop, text="头像：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(15, 0))
