@@ -14,6 +14,9 @@ from config import (
 )
 from chat_db import load_chat_data, save_chat_data
 from user_db import USER_DB, _save_user_db
+from moments_db import (
+    load_moments_data, add_moment, delete_moment, toggle_like_moment,
+)
 
 
 class MainWindow:
@@ -42,6 +45,8 @@ class MainWindow:
                       command=self.show_home_page).pack(pady=8)
             tk.Button(self.side_frame, text="开始聊天", width=12, height=2,
                       command=self.show_chat_page).pack(pady=8)
+            tk.Button(self.side_frame, text="朋友圈", width=12, height=2,
+                      command=self.show_moments_page).pack(pady=8)
             tk.Button(self.side_frame, text="退出登录", width=12, height=2,
                       bg=LOGOUT_BG, fg="white", command=self._logout).pack(pady=30)
 
@@ -119,7 +124,7 @@ class MainWindow:
         func_items = [
             ("👥  我的好友", lambda: messagebox.showinfo("提示", "好友功能开发中")),
             ("💬  我的消息", lambda: self.show_chat_page()),
-            ("📝  我的动态", lambda: messagebox.showinfo("提示", "动态功能开发中")),
+            ("📝  我的动态", lambda: self.show_moments_page()),
             ("⚙️  系统设置", lambda: messagebox.showinfo("提示", "设置功能开发中")),
             ("✏️  修改个人资料", self.edit_profile_pop)
         ]
@@ -308,6 +313,170 @@ class MainWindow:
 
         tk.Button(pop, text="保存修改", bg=BTN_COLOR, fg="white",
                   font=FONT_BTN, command=save_info).pack(pady=15)
+
+    # ==================== 动态（朋友圈）页面 ====================
+
+    def show_moments_page(self):
+        """呈现朋友圈页面：发布动态 + 动态列表 + 点赞/删除"""
+        self.current_page = "moments"
+        self.clear_main_container()
+
+        # ----- 顶部标题栏 -----
+        header = tk.Frame(self.main_container, bg=HEADER_COLOR, height=120)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        tk.Label(header, text="朋友圈", fg="white", bg=HEADER_COLOR,
+                 font=("Microsoft YaHei", 28, "bold")).place(x=20, y=15)
+        tk.Label(header, text=f"{self.user['nickname']} 的动态",
+                 fg="#E8F4FD", bg=HEADER_COLOR, font=FONT_SUBTITLE).place(x=20, y=65)
+        tk.Button(header, text="×", fg="white", bg=HEADER_COLOR,
+                  font=("Arial", 16), relief="flat",
+                  command=self.root.quit).place(x=370, y=10)
+
+        # ----- 发布动态区域 -----
+        post_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=10)
+        post_frame.pack(fill="x", padx=20, pady=10)
+
+        tk.Label(post_frame, text="发动态", bg=CARD_BG, fg=TEXT_BLACK,
+                 font=("Microsoft YaHei", 12, "bold")).pack(anchor="w")
+
+        input_row = tk.Frame(post_frame, bg=CARD_BG)
+        input_row.pack(fill="x", pady=(5, 0))
+
+        self.moment_input = tk.Entry(input_row, font=FONT_NORMAL,
+                                     highlightthickness=1,
+                                     highlightcolor=HEADER_COLOR,
+                                     highlightbackground=INPUT_BORDER)
+        self.moment_input.pack(side="left", fill="x", expand=True, ipady=5)
+        self.moment_input.bind("<Return>", lambda e: self._do_publish_moment())
+
+        tk.Button(input_row, text="发布", bg=BTN_COLOR, fg="white",
+                  command=self._do_publish_moment).pack(side="right", padx=(8, 0))
+
+        # ----- 动态列表（可滚动的 Canvas） -----
+        list_container = tk.Frame(self.main_container, bg=BG_COLOR)
+        list_container.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
+        canvas = tk.Canvas(list_container, bg=BG_COLOR, highlightthickness=0)
+        scrollbar = tk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
+        self.moments_scroll_frame = tk.Frame(canvas, bg=BG_COLOR)
+
+        self.moments_scroll_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=self.moments_scroll_frame, anchor="nw", width=430)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # 绑定鼠标滚轮
+        def _on_mouse_wheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mouse_wheel)
+        self._canvas = canvas
+
+        # 渲染所有动态
+        self._refresh_moments_list()
+
+    def _do_publish_moment(self):
+        """发布动态"""
+        content = self.moment_input.get().strip()
+        if not content:
+            messagebox.showwarning("提示", "请输入动态内容！")
+            return
+        try:
+            add_moment(
+                account=self.account,
+                nickname=self.user["nickname"],
+                avatar=self.user.get("avatar", "🐧"),
+                content=content,
+            )
+            self.moment_input.delete(0, tk.END)
+            self._refresh_moments_list()
+        except Exception as e:
+            messagebox.showerror("发布失败", f"动态发布出错：{str(e)}")
+
+    def _refresh_moments_list(self):
+        """重新渲染动态列表"""
+        for w in self.moments_scroll_frame.winfo_children():
+            w.destroy()
+
+        moments = load_moments_data()
+        if not moments:
+            empty_label = tk.Label(
+                self.moments_scroll_frame, text="暂无动态，快来发第一条吧 ✨",
+                bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL, pady=40
+            )
+            empty_label.pack()
+            return
+
+        for m in moments:
+            self._render_moment_card(m)
+
+    def _render_moment_card(self, m):
+        """渲染单条动态卡片"""
+        card = tk.Frame(self.moments_scroll_frame, bg=CARD_BG, padx=12, pady=10)
+        card.pack(fill="x", pady=6)
+
+        # 头像 + 昵称 + 时间
+        top_row = tk.Frame(card, bg=CARD_BG)
+        top_row.pack(fill="x")
+
+        avatar_text = m.get("avatar", "🐧")
+        tk.Label(top_row, text=avatar_text, font=("Segoe UI Emoji", 24),
+                 bg=CARD_BG).pack(side="left", padx=(0, 8))
+
+        info_col = tk.Frame(top_row, bg=CARD_BG)
+        info_col.pack(side="left", fill="x", expand=True)
+
+        tk.Label(info_col, text=m["nickname"], bg=CARD_BG, fg=HEADER_COLOR,
+                 font=("Microsoft YaHei", 11, "bold"), anchor="w").pack(fill="x")
+
+        tk.Label(info_col, text=m["time"], bg=CARD_BG, fg=TEXT_LIGHT_GRAY,
+                 font=FONT_SMALL, anchor="w").pack(fill="x")
+
+        # 动态内容
+        content_label = tk.Label(card, text=m["content"], bg=CARD_BG, fg=TEXT_BLACK,
+                                 font=FONT_NORMAL, anchor="w", justify="left", wraplength=380)
+        content_label.pack(fill="x", pady=(8, 5))
+
+        # 底部操作栏
+        action_row = tk.Frame(card, bg=CARD_BG)
+        action_row.pack(fill="x")
+
+        # 点赞按钮
+        liked = self.account in m.get("liked_accounts", [])
+        like_text = f"❤️ {m['likes']}" if liked else f"🤍 {m['likes']}"
+        like_btn = tk.Button(
+            action_row, text=like_text, bg=CARD_BG, relief="flat",
+            font=FONT_SMALL, fg=TEXT_GRAY,
+            command=lambda mid=m["id"]: self._do_toggle_like(mid)
+        )
+        like_btn.pack(side="left", padx=(0, 10))
+
+        # 删除按钮（仅作者可见）
+        if m.get("account") == self.account:
+            tk.Button(
+                action_row, text="🗑 删除", bg=CARD_BG, relief="flat",
+                font=FONT_SMALL, fg="red",
+                command=lambda mid=m["id"]: self._do_delete_moment(mid)
+            ).pack(side="left")
+
+    def _do_toggle_like(self, moment_id):
+        """点赞/取消点赞"""
+        result = toggle_like_moment(moment_id, self.account)
+        if result:
+            self._refresh_moments_list()
+
+    def _do_delete_moment(self, moment_id):
+        """删除动态"""
+        confirm = messagebox.askyesno("确认删除", "确定要删除这条动态吗？")
+        if confirm:
+            if delete_moment(moment_id, self.account):
+                self._refresh_moments_list()
 
     def _logout(self):
         confirm = messagebox.askyesno("确认退出", "确定要退出当前账号返回登录页？")
