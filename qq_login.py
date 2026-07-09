@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """QQ登录整合单文件版本，无需拆分模块，直接运行"""
 import tkinter as tk
-from tkinter import messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext, filedialog
+from PIL import Image, ImageTk
 import bcrypt
 import random
 from datetime import datetime
@@ -131,6 +132,95 @@ def account_exists(account: str) -> bool:
 
 # 聊天记录文件路径
 CHAT_FILE = "chat_record.json"
+
+# ====================== 动态（朋友圈）数据层 ======================
+MOMENTS_FILE = "moments.json"
+MOMENTS_PHOTO_DIR = "moments_photos"
+
+# 确保照片目录存在
+os.makedirs(MOMENTS_PHOTO_DIR, exist_ok=True)
+
+def load_moments_data():
+    """从本地文件读取所有动态，文件不存在返回空列表"""
+    if os.path.exists(MOMENTS_FILE):
+        with open(MOMENTS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+def save_moments_data(moments_list: list):
+    """将所有动态保存到本地 JSON 文件"""
+    with open(MOMENTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(moments_list, f, ensure_ascii=False, indent=2)
+
+def add_moment(account: str, nickname: str, avatar: str, content: str,
+               photo_path: str = "") -> dict:
+    """添加一条新动态，返回新创建的动态字典"""
+    moments = load_moments_data()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_moment = {
+        "id": str(int(datetime.now().timestamp() * 1000)),
+        "account": account,
+        "nickname": nickname,
+        "avatar": avatar,
+        "time": now,
+        "likes": 0,
+        "liked_accounts": [],
+    }
+    # 分离文本内容和照片
+    lines = content.strip().splitlines()
+    new_moment["content"] = content.strip()
+    # 照片路径（复制到本地目录）
+    if photo_path:
+        ext = os.path.splitext(photo_path)[1] or ".jpg"
+        photo_id = new_moment["id"] + ext
+        dest = os.path.join(MOMENTS_PHOTO_DIR, photo_id)
+        try:
+            from shutil import copy2
+            copy2(photo_path, dest)
+            new_moment["photo"] = photo_id
+        except Exception:
+            new_moment["photo"] = ""
+    else:
+        new_moment["photo"] = ""
+    moments.insert(0, new_moment)
+    save_moments_data(moments)
+    return new_moment
+
+def delete_moment(moment_id: str, account: str) -> bool:
+    """删除指定动态（仅作者可删），同时删除关联的照片文件"""
+    moments = load_moments_data()
+    for i, m in enumerate(moments):
+        if m["id"] == moment_id and m["account"] == account:
+            # 删除关联的照片文件
+            photo = m.get("photo", "")
+            if photo:
+                photo_full = os.path.join(MOMENTS_PHOTO_DIR, photo)
+                try:
+                    if os.path.exists(photo_full):
+                        os.remove(photo_full)
+                except Exception:
+                    pass
+            moments.pop(i)
+            save_moments_data(moments)
+            return True
+    return False
+
+def toggle_like_moment(moment_id: str, account: str) -> dict:
+    """点赞/取消点赞"""
+    moments = load_moments_data()
+    for m in moments:
+        if m["id"] == moment_id:
+            if "liked_accounts" not in m:
+                m["liked_accounts"] = []
+            if account in m["liked_accounts"]:
+                m["liked_accounts"].remove(account)
+                m["likes"] = len(m["liked_accounts"])
+            else:
+                m["liked_accounts"].append(account)
+                m["likes"] = len(m["liked_accounts"])
+            save_moments_data(moments)
+            return m
+    return None
 
 def load_chat_data():
     """读取本地聊天记录"""
@@ -274,6 +364,8 @@ class MainWindow:
                       command=self.show_home_page).pack(pady=8)
             tk.Button(self.side_frame, text="开始聊天", width=12, height=2,
                       command=self.show_chat_page).pack(pady=8)
+            tk.Button(self.side_frame, text="朋友圈", width=12, height=2,
+                      command=self.show_moments_page).pack(pady=8)
             tk.Button(self.side_frame, text="退出登录", width=12, height=2,
                       bg=LOGOUT_BG, fg="white", command=self._logout).pack(pady=30)
 
@@ -342,7 +434,7 @@ class MainWindow:
         func_items = [
             ("👥  我的好友", lambda: messagebox.showinfo("提示", "好友功能开发中")),
             ("💬  我的消息", lambda: self.show_chat_page()),
-            ("📝  我的动态", lambda: messagebox.showinfo("提示", "动态功能开发中")),
+            ("📝  我的动态", lambda: self.show_moments_page()),
             ("⚙️  系统设置", lambda: messagebox.showinfo("提示", "设置功能开发中")),
             ("✏️  修改个人资料", self.edit_profile_pop)
         ]
@@ -533,6 +625,236 @@ class MainWindow:
 
         tk.Button(pop, text="保存修改", bg=BTN_COLOR, fg="white",
                   font=FONT_BTN, command=save_info).pack(pady=15)
+
+    # ==================== 动态（朋友圈）页面 ====================
+
+    def show_moments_page(self):
+        """呈现朋友圈页面：发布动态 + 动态列表 + 点赞/删除"""
+        self.current_page = "moments"
+        self.clear_main_container()
+
+        # ----- 顶部标题栏 -----
+        header = tk.Frame(self.main_container, bg=HEADER_COLOR, height=120)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        tk.Label(header, text="朋友圈", fg="white", bg=HEADER_COLOR,
+                 font=("Microsoft YaHei", 28, "bold")).place(x=20, y=15)
+        tk.Label(header, text=f"{self.user['nickname']} 的动态",
+                 fg="#E8F4FD", bg=HEADER_COLOR, font=FONT_SUBTITLE).place(x=20, y=65)
+        tk.Button(header, text="×", fg="white", bg=HEADER_COLOR,
+                  font=("Arial", 16), relief="flat",
+                  command=self.root.quit).place(x=370, y=10)
+
+        # ----- 发布动态区域 -----
+        post_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=10)
+        post_frame.pack(fill="x", padx=20, pady=10)
+
+        tk.Label(post_frame, text="发动态", bg=CARD_BG, fg=TEXT_BLACK,
+                 font=("Microsoft YaHei", 12, "bold")).pack(anchor="w")
+
+        input_row = tk.Frame(post_frame, bg=CARD_BG)
+        input_row.pack(fill="x", pady=(5, 0))
+
+        self.moment_input = tk.Entry(input_row, font=FONT_NORMAL,
+                                     highlightthickness=1,
+                                     highlightcolor=HEADER_COLOR,
+                                     highlightbackground=INPUT_BORDER)
+        self.moment_input.pack(side="left", fill="x", expand=True, ipady=5)
+        self.moment_input.bind("<Return>", lambda e: self._do_publish_moment())
+
+        # 照片选择按钮 + 照片文件名显示
+        self.photo_path_var = tk.StringVar()
+        photo_btn = tk.Button(
+            input_row, text="📷", font=("Segoe UI Emoji", 14),
+            bg=CARD_BG, relief="flat", command=self._select_photo
+        )
+        photo_btn.pack(side="right", padx=(4, 4))
+        self.photo_label = tk.Label(
+            input_row, text="", bg=CARD_BG, fg=TEXT_LIGHT_GRAY,
+            font=FONT_SMALL, width=10, anchor="e"
+        )
+        self.photo_label.pack(side="right")
+
+        tk.Button(input_row, text="发布", bg=BTN_COLOR, fg="white",
+                  command=self._do_publish_moment).pack(side="right", padx=(8, 0))
+
+        # ----- 动态列表（可滚动的 Canvas） -----
+        list_container = tk.Frame(self.main_container, bg=BG_COLOR)
+        list_container.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
+        canvas = tk.Canvas(list_container, bg=BG_COLOR, highlightthickness=0)
+        scrollbar = tk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
+        self.moments_scroll_frame = tk.Frame(canvas, bg=BG_COLOR)
+
+        self.moments_scroll_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=self.moments_scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # 绑定鼠标滚轮
+        def _on_mouse_wheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mouse_wheel)
+        self._canvas = canvas
+
+        # 渲染所有动态
+        self._refresh_moments_list()
+
+    def _select_photo(self):
+        """选择照片文件"""
+        path = filedialog.askopenfilename(
+            title="选择照片",
+            filetypes=[("图片文件", "*.jpg *.jpeg *.png *.gif *.bmp")]
+        )
+        if path:
+            self.photo_path_var.set(path)
+            name = os.path.basename(path)
+            if len(name) > 12:
+                name = name[:10] + "…"
+            self.photo_label.config(text=f"📎{name}")
+
+    def _do_publish_moment(self):
+        """发布动态（含照片）"""
+        content = self.moment_input.get().strip()
+        if not content:
+            messagebox.showwarning("提示", "请输入动态内容！")
+            return
+        try:
+            photo = self.photo_path_var.get()
+            add_moment(
+                account=self.account,
+                nickname=self.user["nickname"],
+                avatar=self.user.get("avatar", "🐧"),
+                content=content,
+                photo_path=photo,
+            )
+            self.moment_input.delete(0, tk.END)
+            self.photo_path_var.set("")
+            self.photo_label.config(text="")
+            self._refresh_moments_list()
+        except Exception as e:
+            messagebox.showerror("发布失败", f"动态发布出错：{str(e)}")
+
+    def _refresh_moments_list(self):
+        """重新渲染动态列表"""
+        for w in self.moments_scroll_frame.winfo_children():
+            w.destroy()
+
+        moments = load_moments_data()
+        if not moments:
+            empty_label = tk.Label(
+                self.moments_scroll_frame, text="暂无动态，快来发第一条吧 ✨",
+                bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL, pady=40
+            )
+            empty_label.pack()
+            return
+
+        for m in moments:
+            self._render_moment_card(m)
+
+    def _render_moment_card(self, m):
+        """渲染单条动态卡片"""
+        card = tk.Frame(self.moments_scroll_frame, bg=CARD_BG, padx=12, pady=10)
+        card.pack(fill="x", pady=6)
+
+        # 头像 + 昵称 + 时间
+        top_row = tk.Frame(card, bg=CARD_BG)
+        top_row.pack(fill="x")
+
+        avatar_text = m.get("avatar", "🐧")
+        tk.Label(top_row, text=avatar_text, font=("Segoe UI Emoji", 24),
+                 bg=CARD_BG).pack(side="left", padx=(0, 8))
+
+        info_col = tk.Frame(top_row, bg=CARD_BG)
+        info_col.pack(side="left", fill="x", expand=True)
+
+        tk.Label(info_col, text=m["nickname"], bg=CARD_BG, fg=HEADER_COLOR,
+                 font=("Microsoft YaHei", 11, "bold"), anchor="w").pack(fill="x")
+
+        tk.Label(info_col, text=m["time"], bg=CARD_BG, fg=TEXT_LIGHT_GRAY,
+                 font=FONT_SMALL, anchor="w").pack(fill="x")
+
+        # 动态内容
+        content_label = tk.Label(card, text=m["content"], bg=CARD_BG, fg=TEXT_BLACK,
+                                 font=FONT_NORMAL, anchor="w", justify="left", wraplength=280)
+        content_label.pack(fill="x", pady=(8, 5))
+
+        # 照片显示
+        photo_name = m.get("photo", "")
+        if photo_name:
+            photo_full = os.path.join(MOMENTS_PHOTO_DIR, photo_name)
+            if os.path.exists(photo_full):
+                try:
+                    img = Image.open(photo_full)
+                    img.thumbnail((260, 400), Image.LANCZOS)
+                    tk_img = ImageTk.PhotoImage(img)
+                    img_label = tk.Label(card, image=tk_img, bg=CARD_BG)
+                    img_label.image = tk_img  # 防止被垃圾回收
+                    img_label.pack(pady=(0, 5))
+                    # 点击展开大图
+                    img_label.bind("<Button-1>", lambda e, p=photo_full: self._show_photo_popup(p))
+                except Exception:
+                    pass
+
+        # 底部操作栏
+        action_row = tk.Frame(card, bg=CARD_BG)
+        action_row.pack(fill="x")
+
+        # 点赞按钮
+        liked = self.account in m.get("liked_accounts", [])
+        like_text = f"❤️ {m['likes']}" if liked else f"🤍 {m['likes']}"
+        like_btn = tk.Button(
+            action_row, text=like_text, bg=CARD_BG, relief="flat",
+            font=FONT_SMALL, fg=TEXT_GRAY,
+            command=lambda mid=m["id"]: self._do_toggle_like(mid)
+        )
+        like_btn.pack(side="left", padx=(0, 10))
+
+        # 删除按钮（仅作者可见）
+        if m.get("account") == self.account:
+            tk.Button(
+                action_row, text="🗑 删除", bg=CARD_BG, relief="flat",
+                font=FONT_SMALL, fg="red",
+                command=lambda mid=m["id"]: self._do_delete_moment(mid)
+            ).pack(side="left")
+
+    def _do_toggle_like(self, moment_id):
+        """点赞/取消点赞"""
+        result = toggle_like_moment(moment_id, self.account)
+        if result:
+            self._refresh_moments_list()
+
+    def _do_delete_moment(self, moment_id):
+        """删除动态"""
+        confirm = messagebox.askyesno("确认删除", "确定要删除这条动态吗？")
+        if confirm:
+            if delete_moment(moment_id, self.account):
+                self._refresh_moments_list()
+
+    def _show_photo_popup(self, photo_full_path):
+        """点击照片弹出大图窗口"""
+        try:
+            pop = tk.Toplevel(self.root)
+            pop.title("查看照片")
+            img = Image.open(photo_full_path)
+            # 限制最大尺寸
+            max_w, max_h = 600, 500
+            w, h = img.size
+            if w > max_w or h > max_h:
+                ratio = min(max_w / w, max_h / h)
+                img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+            tk_img = ImageTk.PhotoImage(img)
+            label = tk.Label(pop, image=tk_img)
+            label.image = tk_img
+            label.pack(padx=10, pady=10)
+        except Exception as e:
+            messagebox.showerror("错误", f"无法打开图片：{str(e)}")
 
     def _logout(self):
         confirm = messagebox.askyesno("确认退出", "确定要退出当前账号返回登录页？")
