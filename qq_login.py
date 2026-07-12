@@ -5,9 +5,13 @@ from tkinter import messagebox, scrolledtext, filedialog
 from PIL import Image, ImageTk
 import bcrypt
 import random
-from datetime import datetime
+from datetime import datetime, date
 import json
 import os
+from calendar import monthrange
+from shutil import copy2
+from checkin_db import get_checkin_status, do_checkin, get_month_records
+
 # ====================== 全局配置 ======================
 HEADER_COLOR = "#12B7F5"
 BG_COLOR = "#F5F6FA"
@@ -85,7 +89,6 @@ def load_user_db():
                 db[account] = info
             return db
         except Exception:
-            # 文件损坏时删除损坏文件，使用默认用户
             try:
                 os.remove(USER_DB_FILE)
             except Exception:
@@ -98,7 +101,6 @@ def save_user_db(db):
     for account, info in db.items():
         saved = dict(info)
         saved["hash_pwd"] = saved["hash_pwd"].decode("utf-8")
-        # 确保 level_stars 字段存在
         if "level_stars" not in saved:
             saved["level_stars"] = 0
         to_save[account] = saved
@@ -112,7 +114,6 @@ def save_level_stars(account: str, stars: int):
         USER_DB[account]["level_stars"] = stars
         save_user_db(USER_DB)
 
-# 启动时加载用户数据库
 USER_DB = load_user_db()
 
 def hash_password(raw_pwd: str) -> bytes:
@@ -145,31 +146,26 @@ def get_user_info(account: str):
 def account_exists(account: str) -> bool:
     return account in USER_DB
 
-# 聊天记录文件路径
 CHAT_FILE = "chat_record.json"
 
 # ====================== 动态（朋友圈）数据层 ======================
 MOMENTS_FILE = "moments.json"
 MOMENTS_PHOTO_DIR = "moments_photos"
 
-# 确保照片目录存在
 os.makedirs(MOMENTS_PHOTO_DIR, exist_ok=True)
 
 def load_moments_data():
-    """从本地文件读取所有动态，文件不存在返回空列表"""
     if os.path.exists(MOMENTS_FILE):
         with open(MOMENTS_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return []
 
 def save_moments_data(moments_list: list):
-    """将所有动态保存到本地 JSON 文件"""
     with open(MOMENTS_FILE, "w", encoding="utf-8") as f:
         json.dump(moments_list, f, ensure_ascii=False, indent=2)
 
 def add_moment(account: str, nickname: str, avatar: str, content: str,
                photo_path: str = "") -> dict:
-    """添加一条新动态，返回新创建的动态字典"""
     moments = load_moments_data()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     new_moment = {
@@ -181,16 +177,12 @@ def add_moment(account: str, nickname: str, avatar: str, content: str,
         "likes": 0,
         "liked_accounts": [],
     }
-    # 分离文本内容和照片
-    lines = content.strip().splitlines()
     new_moment["content"] = content.strip()
-    # 照片路径（复制到本地目录）
     if photo_path:
         ext = os.path.splitext(photo_path)[1] or ".jpg"
         photo_id = new_moment["id"] + ext
         dest = os.path.join(MOMENTS_PHOTO_DIR, photo_id)
         try:
-            from shutil import copy2
             copy2(photo_path, dest)
             new_moment["photo"] = photo_id
         except Exception:
@@ -202,11 +194,9 @@ def add_moment(account: str, nickname: str, avatar: str, content: str,
     return new_moment
 
 def delete_moment(moment_id: str, account: str) -> bool:
-    """删除指定动态（仅作者可删），同时删除关联的照片文件"""
     moments = load_moments_data()
     for i, m in enumerate(moments):
         if m["id"] == moment_id and m["account"] == account:
-            # 删除关联的照片文件
             photo = m.get("photo", "")
             if photo:
                 photo_full = os.path.join(MOMENTS_PHOTO_DIR, photo)
@@ -221,7 +211,6 @@ def delete_moment(moment_id: str, account: str) -> bool:
     return False
 
 def toggle_like_moment(moment_id: str, account: str) -> dict:
-    """点赞/取消点赞"""
     moments = load_moments_data()
     for m in moments:
         if m["id"] == moment_id:
@@ -238,14 +227,12 @@ def toggle_like_moment(moment_id: str, account: str) -> dict:
     return None
 
 def load_chat_data():
-    """读取本地聊天记录"""
     if os.path.exists(CHAT_FILE):
         with open(CHAT_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 def save_chat_data(chat_dict):
-    """保存聊天记录到本地"""
     with open(CHAT_FILE, "w", encoding="utf-8") as f:
         json.dump(chat_dict, f, ensure_ascii=False, indent=2)
 
@@ -363,53 +350,46 @@ class MainWindow:
             self.root.geometry(f"{MAIN_W}x{MAIN_H}")
             self.root.resizable(False, False)
 
-            # 聊天全局变量
             self.current_page = "home"
             self.chat_history = load_chat_data()
             self.friend_list = ["小明", "管理员", "QQ用户"]
             self.current_chat_target = None
 
-            # QQ等级系统：每60秒自动加一颗星星
             self.level_stars = self.user.get("level_stars", 0)
             self.level_timer_id = None
             self._start_level_timer()
 
-            # 左侧侧边栏
             self.side_frame = tk.Frame(self.root, bg="#2C3E50", width=120)
             self.side_frame.pack(side="left", fill="y")
             self.side_frame.pack_propagate(False)
 
-            # 侧边按钮
             tk.Button(self.side_frame, text="主页", width=12, height=2,
                       command=self.show_home_page).pack(pady=8)
             tk.Button(self.side_frame, text="开始聊天", width=12, height=2,
                       command=self.show_chat_page).pack(pady=8)
             tk.Button(self.side_frame, text="朋友圈", width=12, height=2,
                       command=self.show_moments_page).pack(pady=8)
+            tk.Button(self.side_frame, text="每日打卡", width=12, height=2,
+                       command=self.show_checkin_page).pack(pady=8)
             tk.Button(self.side_frame, text="退出登录", width=12, height=2,
                       bg=LOGOUT_BG, fg="white", command=self._logout).pack(pady=30)
 
-            # 右侧主内容容器
             self.main_container = tk.Frame(self.root, bg=BG_COLOR)
             self.main_container.pack(side="right", fill="both", expand=True)
 
-            # 默认打开主页
             self.show_home_page()
 
         except Exception as e:
             messagebox.showerror("页面异常", f"主页初始化失败：{str(e)}")
 
     def clear_main_container(self):
-        """清空右侧区域，切换页面用"""
         for widget in self.main_container.winfo_children():
             widget.destroy()
 
     def show_home_page(self):
-        """渲染个人主页"""
         self.current_page = "home"
         self.clear_main_container()
 
-        # 顶部蓝色标题栏
         header = tk.Frame(self.main_container, bg=HEADER_COLOR, height=120)
         header.pack(fill="x")
         header.pack_propagate(False)
@@ -418,7 +398,6 @@ class MainWindow:
         tk.Button(header, text="×", fg="white", bg=HEADER_COLOR, font=("Arial", 16), relief="flat",
                   command=self.root.quit).place(x=370, y=10)
 
-        # 头像卡片（使用保存的头像，默认 🐧）
         card = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
         card.pack(fill="x", padx=20, pady=15)
         avatar_text = self.user.get("avatar", "🐧")
@@ -428,7 +407,6 @@ class MainWindow:
         top_info_row = tk.Frame(info_frame, bg=CARD_BG)
         top_info_row.pack(anchor="w", fill="x")
         tk.Label(top_info_row, text=self.user["nickname"], bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei", 16, "bold")).pack(side="left")
-        # 心情状态显示
         mood_val = self.user.get("mood", "😊开心")
         self.mood_label = tk.Label(top_info_row, text=mood_val, bg=CARD_BG, font=("Segoe UI Emoji", 14), cursor="hand2")
         self.mood_label.pack(side="left", padx=(8, 0))
@@ -436,7 +414,6 @@ class MainWindow:
         tk.Label(info_frame, text=f"签名：{self.user['signature']}", bg=CARD_BG, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w", pady=5)
         tk.Label(info_frame, text="● 在线", bg=CARD_BG, fg=ONLINE_GREEN, font=FONT_SMALL).pack(anchor="w")
 
-        # 个人信息面板
         detail = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
         detail.pack(fill="x", padx=20)
         tk.Label(detail, text="个人信息", bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei", 12, "bold")).pack(anchor="w", pady=(0, 10))
@@ -456,7 +433,6 @@ class MainWindow:
             tk.Label(row, text=label, bg=CARD_BG, fg=TEXT_GRAY, font=FONT_NORMAL, width=10, anchor="w").pack(side="left")
             tk.Label(row, text=val, bg=CARD_BG, fg=TEXT_BLACK, font=FONT_NORMAL, anchor="w").pack(side="left")
 
-        # 快捷功能区
         func_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
         func_frame.pack(fill="x", padx=20, pady=15)
         tk.Label(func_frame, text="快捷功能", bg=CARD_BG, fg=TEXT_BLACK, font=("Microsoft YaHei", 12, "bold")).pack(anchor="w", pady=(0, 10))
@@ -472,11 +448,9 @@ class MainWindow:
                       font=FONT_NORMAL, command=cmd).pack(fill="x", pady=3)
 
     def show_chat_page(self):
-        """聊天页面"""
         self.current_page = "chat"
         self.clear_main_container()
 
-        # 左侧好友列表
         left_box = tk.Frame(self.main_container, bg="#EEEEEE", width=120)
         left_box.pack(side="left", fill="y")
         tk.Label(left_box, text="好友列表", bg="#EEEEEE", font=FONT_NORMAL).pack(pady=10)
@@ -486,18 +460,15 @@ class MainWindow:
             self.chat_listbox.insert(tk.END, name)
         self.chat_listbox.bind("<<ListboxSelect>>", self.load_target_chat)
 
-        # 右侧聊天区域
         chat_area = tk.Frame(self.main_container, bg="white")
         chat_area.pack(side="right", fill="both", expand=True, padx=5)
         self.chat_title = tk.Label(chat_area, text="请选择好友开始聊天", bg="white", font=FONT_TITLE)
         self.chat_title.pack(fill="x", pady=10)
 
-        # 消息滚动框
         self.msg_display = scrolledtext.ScrolledText(chat_area, bg=BG_COLOR, fg=TEXT_BLACK,
                                                      font=FONT_NORMAL, wrap="word", state="disabled")
         self.msg_display.pack(fill="both", expand=True, padx=10, pady=5)
 
-        # 输入栏
         input_frame = tk.Frame(chat_area, bg="white")
         input_frame.pack(fill="x", padx=10, pady=10)
         self.msg_input = tk.Entry(input_frame, font=FONT_NORMAL, highlightthickness=1,
@@ -507,7 +478,6 @@ class MainWindow:
         tk.Button(input_frame, text="发送", bg=BTN_COLOR, fg="white", command=self.send_chat_msg).pack(side="right", padx=5)
 
     def load_target_chat(self, event):
-        """选中好友加载聊天记录"""
         sel = self.chat_listbox.curselection()
         if not sel:
             return
@@ -515,11 +485,9 @@ class MainWindow:
         self.current_chat_target = target_name
         self.chat_title.config(text=f"和【{target_name}】聊天")
 
-        # 初始化空记录
         if target_name not in self.chat_history:
             self.chat_history[target_name] = []
 
-        # 刷新消息框
         self.msg_display.config(state="normal")
         self.msg_display.delete(1.0, tk.END)
         for msg in self.chat_history[target_name]:
@@ -528,7 +496,6 @@ class MainWindow:
         self.msg_display.see(tk.END)
 
     def send_chat_msg(self):
-        """发送消息 + 自动回复"""
         if not self.current_chat_target:
             messagebox.showwarning("提示", "请先选择好友！")
             return
@@ -538,22 +505,18 @@ class MainWindow:
 
         target = self.current_chat_target
         now_time = datetime.now().strftime("%H:%M")
-        # 我方消息
         my_msg = {"sender": self.user["nickname"], "content": text, "time": now_time}
         self.chat_history[target].append(my_msg)
 
-        # 界面更新
         self.msg_display.config(state="normal")
         self.msg_display.insert(tk.END, f"[{now_time}] 我：{text}\n")
         self.msg_display.config(state="disabled")
         self.msg_input.delete(0, tk.END)
         save_chat_data(self.chat_history)
 
-        # 延迟自动回复
         self.root.after(1000, lambda: self.auto_reply(target))
 
     def auto_reply(self, target_name):
-        """模拟好友自动回复"""
         reply_pool = ["好的收到！", "明白了~", "哈哈有意思", "稍等我看看", "没问题！", "了解~"]
         reply_txt = random.choice(reply_pool)
         now_time = datetime.now().strftime("%H:%M")
@@ -567,14 +530,12 @@ class MainWindow:
         save_chat_data(self.chat_history)
 
     def edit_profile_pop(self):
-        """修改资料弹窗（含性别、年龄、地区、姓名等，自动保存到文件）"""
         pop = tk.Toplevel(self.root)
         pop.title("修改个人资料")
         pop.geometry("360x420")
         pop.transient(self.root)
         pop.resizable(False, False)
 
-        # 头像
         tk.Label(pop, text="头像：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(15, 0))
         avatar_var = tk.StringVar(value=self.user.get("avatar", "🐧"))
         avatars = ["🐧", "🐶", "🐱", "🐼", "🐨", "🦊", "🐰", "🐯"]
@@ -584,12 +545,10 @@ class MainWindow:
             tk.Radiobutton(avatar_frame, text=ava, variable=avatar_var, value=ava,
                            font=("Segoe UI Emoji", 16)).pack(side="left")
 
-        # 昵称
         tk.Label(pop, text="昵称：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
         nick_var = tk.StringVar(value=self.user["nickname"])
         tk.Entry(pop, textvariable=nick_var, width=30, font=FONT_NORMAL).pack(pady=3)
 
-        # 性别
         tk.Label(pop, text="性别：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
         gender_var = tk.StringVar(value=self.user.get("gender", "保密"))
         gender_frame = tk.Frame(pop)
@@ -597,23 +556,19 @@ class MainWindow:
         for g in ["男", "女", "保密"]:
             tk.Radiobutton(gender_frame, text=g, variable=gender_var, value=g, font=FONT_NORMAL).pack(side="left", padx=5)
 
-        # 年龄
         tk.Label(pop, text="年龄：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
         age_var = tk.StringVar(value=self.user.get("age", "未知"))
         tk.Entry(pop, textvariable=age_var, width=30, font=FONT_NORMAL).pack(pady=3)
 
-        # 城市
         tk.Label(pop, text="城市：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
         city_var = tk.StringVar(value=self.user.get("city", "未知"))
         tk.Entry(pop, textvariable=city_var, width=30, font=FONT_NORMAL).pack(pady=3)
 
-        # 个性签名
         tk.Label(pop, text="个性签名：", font=FONT_NORMAL).pack(anchor="w", padx=30, pady=(5, 0))
         sign_var = tk.StringVar(value=self.user.get("signature", ""))
         tk.Entry(pop, textvariable=sign_var, width=30, font=FONT_NORMAL).pack(pady=3)
 
         def save_info():
-            """保存修改到内存和文件"""
             try:
                 new_avatar = avatar_var.get()
                 new_nick = nick_var.get().strip()
@@ -622,7 +577,6 @@ class MainWindow:
                 new_city = city_var.get().strip()
                 new_sign = sign_var.get().strip()
 
-                # 更新 self.user 对象
                 self.user["avatar"] = new_avatar
                 if new_nick:
                     self.user["nickname"] = new_nick
@@ -634,7 +588,6 @@ class MainWindow:
                 if new_sign:
                     self.user["signature"] = new_sign
 
-                # 同步更新全局 USER_DB 并保存到文件
                 if self.account in USER_DB:
                     USER_DB[self.account]["nickname"] = self.user["nickname"]
                     USER_DB[self.account]["gender"] = self.user["gender"]
@@ -643,7 +596,6 @@ class MainWindow:
                     USER_DB[self.account]["signature"] = self.user["signature"]
                     USER_DB[self.account]["avatar"] = self.user["avatar"]
 
-                # 无论 USER_DB 中是否存在该账号，都调用保存（新注册用户创建于同一次运行中时可能在全局字典里）
                 save_user_db(USER_DB)
 
                 messagebox.showinfo("成功", "资料修改完成！")
@@ -658,11 +610,9 @@ class MainWindow:
     # ==================== 动态（朋友圈）页面 ====================
 
     def show_moments_page(self):
-        """呈现朋友圈页面：发布动态 + 动态列表 + 点赞/删除"""
         self.current_page = "moments"
         self.clear_main_container()
 
-        # ----- 顶部标题栏 -----
         header = tk.Frame(self.main_container, bg=HEADER_COLOR, height=120)
         header.pack(fill="x")
         header.pack_propagate(False)
@@ -674,7 +624,6 @@ class MainWindow:
                   font=("Arial", 16), relief="flat",
                   command=self.root.quit).place(x=370, y=10)
 
-        # ----- 发布动态区域 -----
         post_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=10)
         post_frame.pack(fill="x", padx=20, pady=10)
 
@@ -691,7 +640,6 @@ class MainWindow:
         self.moment_input.pack(side="left", fill="x", expand=True, ipady=5)
         self.moment_input.bind("<Return>", lambda e: self._do_publish_moment())
 
-        # 照片选择按钮 + 照片文件名显示
         self.photo_path_var = tk.StringVar()
         photo_btn = tk.Button(
             input_row, text="📷", font=("Segoe UI Emoji", 14),
@@ -707,7 +655,6 @@ class MainWindow:
         tk.Button(input_row, text="发布", bg=BTN_COLOR, fg="white",
                   command=self._do_publish_moment).pack(side="right", padx=(8, 0))
 
-        # ----- 动态列表（可滚动的 Canvas） -----
         list_container = tk.Frame(self.main_container, bg=BG_COLOR)
         list_container.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
@@ -726,17 +673,14 @@ class MainWindow:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # 绑定鼠标滚轮
         def _on_mouse_wheel(event):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         canvas.bind_all("<MouseWheel>", _on_mouse_wheel)
         self._canvas = canvas
 
-        # 渲染所有动态
         self._refresh_moments_list()
 
     def _select_photo(self):
-        """选择照片文件"""
         path = filedialog.askopenfilename(
             title="选择照片",
             filetypes=[("图片文件", "*.jpg *.jpeg *.png *.gif *.bmp")]
@@ -749,7 +693,6 @@ class MainWindow:
             self.photo_label.config(text=f"📎{name}")
 
     def _do_publish_moment(self):
-        """发布动态（含照片）"""
         content = self.moment_input.get().strip()
         if not content:
             messagebox.showwarning("提示", "请输入动态内容！")
@@ -771,7 +714,6 @@ class MainWindow:
             messagebox.showerror("发布失败", f"动态发布出错：{str(e)}")
 
     def _refresh_moments_list(self):
-        """重新渲染动态列表"""
         for w in self.moments_scroll_frame.winfo_children():
             w.destroy()
 
@@ -788,11 +730,9 @@ class MainWindow:
             self._render_moment_card(m)
 
     def _render_moment_card(self, m):
-        """渲染单条动态卡片"""
         card = tk.Frame(self.moments_scroll_frame, bg=CARD_BG, padx=12, pady=10)
         card.pack(fill="x", pady=6)
 
-        # 头像 + 昵称 + 时间
         top_row = tk.Frame(card, bg=CARD_BG)
         top_row.pack(fill="x")
 
@@ -809,12 +749,10 @@ class MainWindow:
         tk.Label(info_col, text=m["time"], bg=CARD_BG, fg=TEXT_LIGHT_GRAY,
                  font=FONT_SMALL, anchor="w").pack(fill="x")
 
-        # 动态内容
         content_label = tk.Label(card, text=m["content"], bg=CARD_BG, fg=TEXT_BLACK,
                                  font=FONT_NORMAL, anchor="w", justify="left", wraplength=280)
         content_label.pack(fill="x", pady=(8, 5))
 
-        # 照片显示
         photo_name = m.get("photo", "")
         if photo_name:
             photo_full = os.path.join(MOMENTS_PHOTO_DIR, photo_name)
@@ -824,18 +762,15 @@ class MainWindow:
                     img.thumbnail((260, 400), Image.LANCZOS)
                     tk_img = ImageTk.PhotoImage(img)
                     img_label = tk.Label(card, image=tk_img, bg=CARD_BG)
-                    img_label.image = tk_img  # 防止被垃圾回收
+                    img_label.image = tk_img
                     img_label.pack(pady=(0, 5))
-                    # 点击展开大图
                     img_label.bind("<Button-1>", lambda e, p=photo_full: self._show_photo_popup(p))
                 except Exception:
                     pass
 
-        # 底部操作栏
         action_row = tk.Frame(card, bg=CARD_BG)
         action_row.pack(fill="x")
 
-        # 点赞按钮
         liked = self.account in m.get("liked_accounts", [])
         like_text = f"❤️ {m['likes']}" if liked else f"🤍 {m['likes']}"
         like_btn = tk.Button(
@@ -845,7 +780,6 @@ class MainWindow:
         )
         like_btn.pack(side="left", padx=(0, 10))
 
-        # 删除按钮（仅作者可见）
         if m.get("account") == self.account:
             tk.Button(
                 action_row, text="🗑 删除", bg=CARD_BG, relief="flat",
@@ -854,25 +788,21 @@ class MainWindow:
             ).pack(side="left")
 
     def _do_toggle_like(self, moment_id):
-        """点赞/取消点赞"""
         result = toggle_like_moment(moment_id, self.account)
         if result:
             self._refresh_moments_list()
 
     def _do_delete_moment(self, moment_id):
-        """删除动态"""
         confirm = messagebox.askyesno("确认删除", "确定要删除这条动态吗？")
         if confirm:
             if delete_moment(moment_id, self.account):
                 self._refresh_moments_list()
 
     def _show_photo_popup(self, photo_full_path):
-        """点击照片弹出大图窗口"""
         try:
             pop = tk.Toplevel(self.root)
             pop.title("查看照片")
             img = Image.open(photo_full_path)
-            # 限制最大尺寸
             max_w, max_h = 600, 500
             w, h = img.size
             if w > max_w or h > max_h:
@@ -885,10 +815,160 @@ class MainWindow:
         except Exception as e:
             messagebox.showerror("错误", f"无法打开图片：{str(e)}")
 
+    # ==================== 每日打卡页面 ====================
+
+    def show_checkin_page(self):
+        """呈现每日打卡页面：打卡统计 + 打卡日历 + 签到按钮"""
+        self.current_page = "checkin"
+        self.clear_main_container()
+
+        # ----- 顶部标题栏 -----
+        header = tk.Frame(self.main_container, bg=HEADER_COLOR, height=120)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        tk.Label(header, text="每日打卡", fg="white", bg=HEADER_COLOR,
+                 font=("Microsoft YaHei", 28, "bold")).place(x=20, y=15)
+        tk.Label(header, text=f"{self.user['nickname']}，坚持就是胜利！",
+                 fg="#E8F4FD", bg=HEADER_COLOR, font=FONT_SUBTITLE).place(x=20, y=65)
+        tk.Button(header, text="×", fg="white", bg=HEADER_COLOR,
+                  font=("Arial", 16), relief="flat",
+                  command=self.root.quit).place(x=370, y=10)
+
+        # 获取打卡状态
+        status = get_checkin_status(self.account)
+
+        # ----- 打卡统计卡片 -----
+        stat_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        stat_frame.pack(fill="x", padx=20, pady=15)
+
+        tk.Label(stat_frame, text="打卡统计", bg=CARD_BG, fg=TEXT_BLACK,
+                 font=("Microsoft YaHei", 14, "bold")).pack(anchor="w", pady=(0, 10))
+
+        # 总天数 & 连续天数
+        stats_row = tk.Frame(stat_frame, bg=CARD_BG)
+        stats_row.pack(fill="x", pady=5)
+
+        # 总打卡天数
+        total_frame = tk.Frame(stats_row, bg=CARD_BG)
+        total_frame.pack(side="left", expand=True)
+        tk.Label(total_frame, text=f"{status['total']}", fg=HEADER_COLOR,
+                 bg=CARD_BG, font=("Microsoft YaHei", 36, "bold")).pack()
+        tk.Label(total_frame, text="总打卡天数", bg=CARD_BG, fg=TEXT_GRAY,
+                 font=FONT_SMALL).pack()
+
+        # 连续打卡天数
+        streak_frame = tk.Frame(stats_row, bg=CARD_BG)
+        streak_frame.pack(side="left", expand=True)
+        tk.Label(streak_frame, text=f"{status['streak']}", fg="#FF6B35",
+                 bg=CARD_BG, font=("Microsoft YaHei", 36, "bold")).pack()
+        tk.Label(streak_frame, text="连续打卡天数", bg=CARD_BG, fg=TEXT_GRAY,
+                 font=FONT_SMALL).pack()
+
+        # 打卡按钮
+        self.checkin_btn_frame = tk.Frame(self.main_container, bg=BG_COLOR)
+        self.checkin_btn_frame.pack(fill="x", padx=20, pady=10)
+
+        if status["checked_in"]:
+            # 今日已打卡
+            btn = tk.Button(
+                self.checkin_btn_frame, text="✅ 今日已打卡",
+                bg="#52C41A", fg="white", font=FONT_BTN, relief="flat",
+                state="disabled", padx=20, pady=10
+            )
+            btn.pack()
+            tk.Label(self.checkin_btn_frame, text="太棒了，明天继续加油！",
+                     bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(pady=5)
+        else:
+            # 尚未打卡
+            tk.Label(self.checkin_btn_frame, text="今天还没有打卡哦，快来打卡吧！",
+                     bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL).pack(pady=(0, 10))
+            btn = tk.Button(
+                self.checkin_btn_frame, text="🎯 立即打卡",
+                bg=BTN_COLOR, fg="white", font=FONT_BTN, relief="flat",
+                padx=30, pady=12, command=self._do_checkin_action
+            )
+            btn.pack()
+
+        # ----- 本月打卡日历 -----
+        cal_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        cal_frame.pack(fill="x", padx=20, pady=15)
+
+        today = datetime.now()
+        year = today.year
+        month = today.month
+        _, days_in_month = monthrange(year, month)
+        month_records = get_month_records(self.account, year, month)
+
+        tk.Label(cal_frame, text=f"{year}年{month}月打卡日历",
+                 bg=CARD_BG, fg=TEXT_BLACK,
+                 font=("Microsoft YaHei", 12, "bold")).pack(anchor="w", pady=(0, 10))
+
+        # 星期标题
+        weekday_frame = tk.Frame(cal_frame, bg=CARD_BG)
+        weekday_frame.pack(fill="x")
+        weekdays = ["一", "二", "三", "四", "五", "六", "日"]
+        for wd in weekdays:
+            tk.Label(weekday_frame, text=wd, bg=CARD_BG, fg=TEXT_GRAY,
+                     font=FONT_SMALL, width=4, anchor="center").pack(side="left", padx=4)
+
+        # 日历网格
+        grid_frame = tk.Frame(cal_frame, bg=CARD_BG)
+        grid_frame.pack(fill="x", pady=(5, 0))
+
+        first_weekday = datetime(year, month, 1).weekday()  # 周一=0
+        # 转换为周日=0格式
+        first_weekday_sun = (first_weekday + 1) % 7
+
+        # 前面填充空白
+        col = 0
+        for _ in range(first_weekday_sun):
+            tk.Label(grid_frame, text="", bg=CARD_BG, width=4).pack(side="left", padx=4)
+            col += 1
+
+        for day in range(1, days_in_month + 1):
+            date_str = f"{year:04d}-{month:02d}-{day:02d}"
+            is_checked = date_str in month_records
+
+            if is_checked:
+                day_label = tk.Label(
+                    grid_frame, text=f"{day}✅", bg="#E8F5E9", fg="#2E7D32",
+                    font=FONT_SMALL, width=4, relief="solid", bd=1
+                )
+            else:
+                is_today = (day == today.day)
+                if is_today:
+                    day_label = tk.Label(
+                        grid_frame, text=str(day), bg="#E3F2FD", fg=HEADER_COLOR,
+                        font=FONT_SMALL, width=4, relief="solid", bd=1
+                    )
+                else:
+                    day_label = tk.Label(
+                        grid_frame, text=str(day), bg=CARD_BG, fg=TEXT_BLACK,
+                        font=FONT_SMALL, width=4, bd=1
+                    )
+            day_label.pack(side="left", padx=4, pady=2)
+            col += 1
+            if col >= 7:
+                col = 0
+
+    def _do_checkin_action(self):
+        """执行打卡操作"""
+        try:
+            result = do_checkin(self.account)
+            if result["already"]:
+                messagebox.showinfo("提示", "今天已经打过卡了哦！")
+            else:
+                messagebox.showinfo("打卡成功", f"🎉 打卡成功！\n\n"
+                                              f"连续打卡：{result['streak']} 天\n"
+                                              f"总打卡次数：{result['total']} 次\n\n"
+                                              f"继续坚持！")
+            self.show_checkin_page()
+        except Exception as e:
+            messagebox.showerror("打卡失败", f"打卡操作出错：{str(e)}")
+
     # ==================== 心情状态切换 ====================
 
     def _change_mood_popup(self):
-        """弹出心情选择窗口"""
         pop = tk.Toplevel(self.root)
         pop.title("设置心情状态")
         pop.geometry("300x200")
@@ -905,7 +985,6 @@ class MainWindow:
         ]
 
         def set_mood(mood_val):
-            """设置心情并保存"""
             self.user["mood"] = mood_val
             self.mood_label.config(text=mood_val)
             if self.account in USER_DB:
@@ -923,28 +1002,22 @@ class MainWindow:
     # ==================== QQ等级系统 ====================
 
     def _start_level_timer(self):
-        """启动等级计时器（每60秒加一颗星）"""
         self._add_star()
         self.level_timer_id = self.root.after(60000, self._start_level_timer)
 
     def _add_star(self):
-        """增加一颗星星并保存"""
         self.level_stars += 1
         self.user["level_stars"] = self.level_stars
         save_level_stars(self.account, self.level_stars)
 
     def _stop_level_timer(self):
-        """退出前停止计时器"""
         if self.level_timer_id:
             self.root.after_cancel(self.level_timer_id)
             self.level_timer_id = None
-        # 退出时再保存一次确保数据最新
         save_level_stars(self.account, self.level_stars)
 
     def get_level_stars_display(self):
-        """根据星星数生成等级显示文本和图标"""
         stars = self.level_stars
-        # 4颗星=1个月亮，4个月亮=1个太阳
         suns = stars // 64
         moons = (stars % 64) // 16
         star_count = stars % 16

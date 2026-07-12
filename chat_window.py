@@ -17,6 +17,10 @@ from user_db import USER_DB, _save_user_db
 from moments_db import (
     load_moments_data, add_moment, delete_moment, toggle_like_moment,
 )
+from checkin_db import (
+    get_checkin_status, do_checkin, get_month_records,
+)
+from calendar import monthrange
 
 
 class MainWindow:
@@ -46,7 +50,9 @@ class MainWindow:
             tk.Button(self.side_frame, text="开始聊天", width=12, height=2,
                       command=self.show_chat_page).pack(pady=8)
             tk.Button(self.side_frame, text="朋友圈", width=12, height=2,
-                      command=self.show_moments_page).pack(pady=8)
+                       command=self.show_moments_page).pack(pady=8)
+            tk.Button(self.side_frame, text="每日打卡", width=12, height=2,
+                       command=self.show_checkin_page).pack(pady=8)
             tk.Button(self.side_frame, text="退出登录", width=12, height=2,
                       bg=LOGOUT_BG, fg="white", command=self._logout).pack(pady=30)
 
@@ -477,6 +483,157 @@ class MainWindow:
         if confirm:
             if delete_moment(moment_id, self.account):
                 self._refresh_moments_list()
+
+    # ==================== 每日打卡页面 ====================
+
+    def show_checkin_page(self):
+        """呈现每日打卡页面：打卡统计 + 打卡日历 + 签到按钮"""
+        self.current_page = "checkin"
+        self.clear_main_container()
+
+        # ----- 顶部标题栏 -----
+        header = tk.Frame(self.main_container, bg=HEADER_COLOR, height=120)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        tk.Label(header, text="每日打卡", fg="white", bg=HEADER_COLOR,
+                 font=("Microsoft YaHei", 28, "bold")).place(x=20, y=15)
+        tk.Label(header, text=f"{self.user['nickname']}，坚持就是胜利！",
+                 fg="#E8F4FD", bg=HEADER_COLOR, font=FONT_SUBTITLE).place(x=20, y=65)
+        tk.Button(header, text="×", fg="white", bg=HEADER_COLOR,
+                  font=("Arial", 16), relief="flat",
+                  command=self.root.quit).place(x=370, y=10)
+
+        # 获取打卡状态
+        status = get_checkin_status(self.account)
+
+        # ----- 打卡统计卡片 -----
+        stat_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        stat_frame.pack(fill="x", padx=20, pady=15)
+
+        tk.Label(stat_frame, text="打卡统计", bg=CARD_BG, fg=TEXT_BLACK,
+                 font=("Microsoft YaHei", 14, "bold")).pack(anchor="w", pady=(0, 10))
+
+        # 总天数 & 连续天数
+        stats_row = tk.Frame(stat_frame, bg=CARD_BG)
+        stats_row.pack(fill="x", pady=5)
+
+        # 总打卡天数
+        total_frame = tk.Frame(stats_row, bg=CARD_BG)
+        total_frame.pack(side="left", expand=True)
+        tk.Label(total_frame, text=f"{status['total']}", fg=HEADER_COLOR,
+                 bg=CARD_BG, font=("Microsoft YaHei", 36, "bold")).pack()
+        tk.Label(total_frame, text="总打卡天数", bg=CARD_BG, fg=TEXT_GRAY,
+                 font=FONT_SMALL).pack()
+
+        # 连续打卡天数
+        streak_frame = tk.Frame(stats_row, bg=CARD_BG)
+        streak_frame.pack(side="left", expand=True)
+        tk.Label(streak_frame, text=f"{status['streak']}", fg="#FF6B35",
+                 bg=CARD_BG, font=("Microsoft YaHei", 36, "bold")).pack()
+        tk.Label(streak_frame, text="连续打卡天数", bg=CARD_BG, fg=TEXT_GRAY,
+                 font=FONT_SMALL).pack()
+
+        # 打卡按钮
+        self.checkin_btn_frame = tk.Frame(self.main_container, bg=BG_COLOR)
+        self.checkin_btn_frame.pack(fill="x", padx=20, pady=10)
+
+        if status["checked_in"]:
+            # 今日已打卡
+            btn = tk.Button(
+                self.checkin_btn_frame, text="✅ 今日已打卡",
+                bg="#52C41A", fg="white", font=FONT_BTN, relief="flat",
+                state="disabled", padx=20, pady=10
+            )
+            btn.pack()
+            tk.Label(self.checkin_btn_frame, text="太棒了，明天继续加油！",
+                     bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(pady=5)
+        else:
+            # 尚未打卡
+            tk.Label(self.checkin_btn_frame, text="今天还没有打卡哦，快来打卡吧！",
+                     bg=BG_COLOR, fg=TEXT_LIGHT_GRAY, font=FONT_NORMAL).pack(pady=(0, 10))
+            btn = tk.Button(
+                self.checkin_btn_frame, text="🎯 立即打卡",
+                bg=BTN_COLOR, fg="white", font=FONT_BTN, relief="flat",
+                padx=30, pady=12, command=self._do_checkin_action
+            )
+            btn.pack()
+
+        # ----- 本月打卡日历 -----
+        cal_frame = tk.Frame(self.main_container, bg=CARD_BG, padx=15, pady=15)
+        cal_frame.pack(fill="x", padx=20, pady=15)
+
+        today = datetime.now()
+        year = today.year
+        month = today.month
+        _, days_in_month = monthrange(year, month)
+        month_records = get_month_records(self.account, year, month)
+
+        tk.Label(cal_frame, text=f"{year}年{month}月打卡日历",
+                 bg=CARD_BG, fg=TEXT_BLACK,
+                 font=("Microsoft YaHei", 12, "bold")).pack(anchor="w", pady=(0, 10))
+
+        # 星期标题
+        weekday_frame = tk.Frame(cal_frame, bg=CARD_BG)
+        weekday_frame.pack(fill="x")
+        weekdays = ["一", "二", "三", "四", "五", "六", "日"]
+        for wd in weekdays:
+            tk.Label(weekday_frame, text=wd, bg=CARD_BG, fg=TEXT_GRAY,
+                     font=FONT_SMALL, width=4, anchor="center").pack(side="left", padx=4)
+
+        # 日历网格
+        grid_frame = tk.Frame(cal_frame, bg=CARD_BG)
+        grid_frame.pack(fill="x", pady=(5, 0))
+
+        first_weekday = datetime(year, month, 1).weekday()  # 周一=0
+        # 转换为周日=0格式
+        first_weekday_sun = (first_weekday + 1) % 7
+
+        # 前面填充空白
+        col = 0
+        for _ in range(first_weekday_sun):
+            tk.Label(grid_frame, text="", bg=CARD_BG, width=4).pack(side="left", padx=4)
+            col += 1
+
+        for day in range(1, days_in_month + 1):
+            date_str = f"{year:04d}-{month:02d}-{day:02d}"
+            is_checked = date_str in month_records
+
+            if is_checked:
+                day_label = tk.Label(
+                    grid_frame, text=f"{day}✅", bg="#E8F5E9", fg="#2E7D32",
+                    font=FONT_SMALL, width=4, relief="solid", bd=1
+                )
+            else:
+                is_today = (day == today.day)
+                if is_today:
+                    day_label = tk.Label(
+                        grid_frame, text=str(day), bg="#E3F2FD", fg=HEADER_COLOR,
+                        font=FONT_SMALL, width=4, relief="solid", bd=1
+                    )
+                else:
+                    day_label = tk.Label(
+                        grid_frame, text=str(day), bg=CARD_BG, fg=TEXT_BLACK,
+                        font=FONT_SMALL, width=4, bd=1
+                    )
+            day_label.pack(side="left", padx=4, pady=2)
+            col += 1
+            if col >= 7:
+                col = 0
+
+    def _do_checkin_action(self):
+        """执行打卡操作"""
+        try:
+            result = do_checkin(self.account)
+            if result["already"]:
+                messagebox.showinfo("提示", "今天已经打过卡了哦！")
+            else:
+                messagebox.showinfo("打卡成功", f"🎉 打卡成功！\n\n"
+                                              f"连续打卡：{result['streak']} 天\n"
+                                              f"总打卡次数：{result['total']} 次\n\n"
+                                              f"继续坚持！")
+            self.show_checkin_page()
+        except Exception as e:
+            messagebox.showerror("打卡失败", f"打卡操作出错：{str(e)}")
 
     def _logout(self):
         confirm = messagebox.askyesno("确认退出", "确定要退出当前账号返回登录页？")
