@@ -47,6 +47,10 @@ class MainWindow:
             self.last_msg_count = 0
             self.polling_id = None
 
+            self.level_stars = self.user.get("level_stars", 0)
+            self.level_timer_id = None
+            self._start_level_timer()
+
             self.side_frame = tk.Frame(self.root, bg="#2C3E50", width=120)
             self.side_frame.pack(side="left", fill="y")
             self.side_frame.pack_propagate(False)
@@ -98,8 +102,15 @@ class MainWindow:
         tk.Label(card, text=avatar_text, font=FONT_EMOJI, bg=CARD_BG).pack(side="left")
         info_frame = tk.Frame(card, bg=CARD_BG)
         info_frame.pack(side="left", padx=15)
-        tk.Label(info_frame, text=self.user["nickname"], bg=CARD_BG,
-                 fg=TEXT_BLACK, font=("Microsoft YaHei", 16, "bold")).pack(anchor="w")
+        top_info_row = tk.Frame(info_frame, bg=CARD_BG)
+        top_info_row.pack(anchor="w", fill="x")
+        tk.Label(top_info_row, text=self.user["nickname"], bg=CARD_BG,
+                 fg=TEXT_BLACK, font=("Microsoft YaHei", 16, "bold")).pack(side="left")
+        mood_val = self.user.get("mood", "😊开心")
+        self.mood_label = tk.Label(top_info_row, text=mood_val, bg=CARD_BG,
+                                    font=("Segoe UI Emoji", 14), cursor="hand2")
+        self.mood_label.pack(side="left", padx=(8, 0))
+        self.mood_label.bind("<Button-1>", lambda e: self._change_mood_popup())
         tk.Label(info_frame, text=f"签名：{self.user['signature']}",
                  bg=CARD_BG, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(anchor="w", pady=5)
         tk.Label(info_frame, text="● 在线", bg=CARD_BG, fg=ONLINE_GREEN, font=FONT_SMALL).pack(anchor="w")
@@ -108,13 +119,15 @@ class MainWindow:
         detail.pack(fill="x", padx=20)
         tk.Label(detail, text="个人信息", bg=CARD_BG, fg=TEXT_BLACK,
                  font=("Microsoft YaHei", 12, "bold")).pack(anchor="w", pady=(0, 10))
+        display_text, total_stars = self.get_level_stars_display()
         info_list = [
             ("账    号", self.account),
             ("昵    称", self.user["nickname"]),
             ("性    别", self.user["gender"]),
             ("年    龄", self.user["age"]),
             ("城    市", self.user["city"]),
-            ("个性签名", self.user["signature"])
+            ("个性签名", self.user["signature"]),
+            ("QQ等级", display_text),
         ]
         for label, val in info_list:
             row = tk.Frame(detail, bg=CARD_BG)
@@ -138,6 +151,57 @@ class MainWindow:
         for text, cmd in func_items:
             tk.Button(func_frame, text=text, bg=CARD_BG, relief="flat", anchor="w",
                       font=FONT_NORMAL, command=cmd).pack(fill="x", pady=3)
+
+    # ==================== 心情状态切换 ====================
+    def _change_mood_popup(self):
+        pop = tk.Toplevel(self.root)
+        pop.title("设置心情状态")
+        pop.geometry("300x200")
+        pop.transient(self.root)
+        pop.grab_set()
+        pop.resizable(False, False)
+        tk.Label(pop, text="选择你的心情状态：", font=FONT_NORMAL).pack(pady=(20, 10))
+        moods = [("😊开心", "😊开心"), ("😢伤心", "😢伤心"), ("😐平静", "😐平静")]
+        def set_mood(mood_val):
+            self.user["mood"] = mood_val
+            self.mood_label.config(text=mood_val)
+            if self.account in USER_DB:
+                USER_DB[self.account]["mood"] = mood_val
+                _save_user_db()
+            pop.destroy()
+        for display, value in moods:
+            tk.Button(pop, text=display, font=("Segoe UI Emoji", 16),
+                      bg=CARD_BG, relief="flat", anchor="w", padx=20,
+                      command=lambda v=value: set_mood(v)).pack(fill="x", padx=30, pady=3)
+
+    # ==================== QQ等级系统 ====================
+    def _start_level_timer(self):
+        self._add_star()
+        self.level_timer_id = self.root.after(60000, self._start_level_timer)
+
+    def _add_star(self):
+        self.level_stars += 1
+        self.user["level_stars"] = self.level_stars
+        from user_db import save_level_stars
+        save_level_stars(self.account, self.level_stars)
+
+    def _stop_level_timer(self):
+        if self.level_timer_id:
+            self.root.after_cancel(self.level_timer_id)
+            self.level_timer_id = None
+        from user_db import save_level_stars
+        save_level_stars(self.account, self.level_stars)
+
+    def get_level_stars_display(self):
+        stars = self.level_stars
+        parts = []
+        if stars // 64:
+            parts.append(f"☀️×{stars // 64}")
+        if (stars % 64) // 16:
+            parts.append(f"🌙×{(stars % 64) // 16}")
+        star_count = stars % 16
+        parts.append(f"⭐×{star_count if parts else stars}")
+        return "  ".join(parts), stars
 
     # ==================== 聊天页面（含好友系统） ====================
 
@@ -926,6 +990,7 @@ class MainWindow:
             if self.polling_id:
                 self.root.after_cancel(self.polling_id)
                 self.polling_id = None
+            self._stop_level_timer()
             self.root.destroy()
             from login_window import run_login_window
             run_login_window()

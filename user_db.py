@@ -86,6 +86,13 @@ def create_user(account: str, nickname: str, raw_pwd: str):
 
 # ---------- 用户资料修改 ----------
 
+def save_level_stars(account: str, stars: int):
+    """保存用户的QQ等级星星数"""
+    if account in USER_DB:
+        USER_DB[account]["level_stars"] = stars
+        _save_user_db()
+
+
 def update_user_info(account: str, **kwargs):
     """更新用户资料字段，自动保存到文件。返回更新后的用户信息，账号不存在返回 None"""
     if account not in USER_DB:
