@@ -20,6 +20,9 @@ from friends_db import (
 from moments_db import (
     load_moments_data, add_moment, delete_moment, toggle_like_moment,
 )
+import subprocess
+import os
+import sys
 from checkin_db import (
     get_checkin_status, do_checkin, get_month_records,
 )
@@ -554,6 +557,16 @@ class MainWindow:
         self.moment_input.pack(side="left", fill="x", expand=True, ipady=5)
         self.moment_input.bind("<Return>", lambda e: self._do_publish_moment())
 
+        # 视频选择相关
+        self.moment_video_path = ""
+        self.video_label_var = tk.StringVar(value="未选择视频")
+        tk.Label(input_row, textvariable=self.video_label_var,
+                 bg=CARD_BG, fg=TEXT_LIGHT_GRAY, font=FONT_SMALL).pack(side="right", padx=(0, 4))
+
+        tk.Button(input_row, text="🎬 选视频", bg=BTN_COLOR, fg="white",
+                  font=FONT_SMALL, relief="flat", padx=6,
+                  command=self._select_moment_video).pack(side="right", padx=2)
+
         tk.Button(input_row, text="发布", bg=BTN_COLOR, fg="white",
                   command=self._do_publish_moment).pack(side="right", padx=(8, 0))
 
@@ -582,19 +595,36 @@ class MainWindow:
 
         self._refresh_moments_list()
 
+    def _select_moment_video(self):
+        """弹出文件选择对话框选择视频文件"""
+        from tkinter import filedialog
+        file_path = filedialog.askopenfilename(
+            title="选择视频文件",
+            parent=self.root,
+            filetypes=[("视频文件", "*.mp4 *.avi *.mov *.mkv *.flv *.wmv"), ("所有文件", "*.*")]
+        )
+        if file_path:
+            self.moment_video_path = file_path
+            fname = os.path.basename(file_path)
+            self.video_label_var.set(f"🎬 {fname}")
+
     def _do_publish_moment(self):
         content = self.moment_input.get().strip()
-        if not content:
-            messagebox.showwarning("提示", "请输入动态内容！")
+        if not content and not self.moment_video_path:
+            messagebox.showwarning("提示", "请输入动态内容或选择视频！")
             return
         try:
+            video_path = self.moment_video_path if self.moment_video_path else ""
             add_moment(
                 account=self.account,
                 nickname=self.user["nickname"],
                 avatar=self.user.get("avatar", "🐧"),
                 content=content,
+                video_path=video_path,
             )
             self.moment_input.delete(0, tk.END)
+            self.moment_video_path = ""
+            self.video_label_var.set("未选择视频")
             self._refresh_moments_list()
         except Exception as e:
             messagebox.showerror("发布失败", f"动态发布出错：{str(e)}")
@@ -639,6 +669,18 @@ class MainWindow:
                                  font=FONT_NORMAL, anchor="w", justify="left", wraplength=380)
         content_label.pack(fill="x", pady=(8, 5))
 
+        # 显示视频附件
+        video_path = m.get("video", "")
+        if video_path and os.path.isfile(video_path):
+            video_frame = tk.Frame(card, bg="#F0F0F0", padx=8, pady=6)
+            video_frame.pack(fill="x", pady=(0, 5))
+            tk.Label(video_frame, text="🎬 视频附件",
+                     bg="#F0F0F0", fg=HEADER_COLOR,
+                     font=("Microsoft YaHei", 10, "bold")).pack(side="left")
+            tk.Button(video_frame, text="▶ 播放", bg=BTN_COLOR, fg="white",
+                      font=FONT_SMALL, relief="flat", padx=10,
+                      command=lambda p=video_path: self._play_video(p)).pack(side="right")
+
         action_row = tk.Frame(card, bg=CARD_BG)
         action_row.pack(fill="x")
 
@@ -657,6 +699,16 @@ class MainWindow:
                 font=FONT_SMALL, fg="red",
                 command=lambda mid=m["id"]: self._do_delete_moment(mid)
             ).pack(side="left")
+
+    def _play_video(self, video_path):
+        """使用系统默认播放器打开视频文件"""
+        try:
+            if os.name == 'nt':  # Windows
+                os.startfile(video_path)
+            elif os.name == 'posix':  # macOS / Linux
+                subprocess.call(('open' if sys.platform == 'darwin' else 'xdg-open', video_path))
+        except Exception as e:
+            messagebox.showerror("播放失败", f"无法打开视频文件：{str(e)}")
 
     def _do_toggle_like(self, moment_id):
         result = toggle_like_moment(moment_id, self.account)

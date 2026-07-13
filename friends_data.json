@@ -4,6 +4,10 @@
       {
         "account": "1234",
         "nickname": "2"
+      },
+      {
+        "account": "666",
+        "nickname": "h"
       }
     ],
     "pending": []
@@ -13,6 +17,33 @@
       {
         "account": "123",
         "nickname": "1"
+      },
+      {
+        "account": "666",
+        "nickname": "h"
+      }
+    ],
+    "pending": []
+  },
+  "123456": {
+    "friends": [],
+    "pending": [
+      {
+        "from_account": "666",
+        "from_nickname": "h",
+        "time": "2026-07-13 21:24:15"
+      }
+    ]
+  },
+  "666": {
+    "friends": [
+      {
+        "account": "123",
+        "nickname": "1"
+      },
+      {
+        "account": "1234",
+        "nickname": "2"
       }
     ],
     "pending": []

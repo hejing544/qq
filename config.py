@@ -40,6 +40,7 @@ USER_DB_FILE = "user_db.json"
 CHAT_FILE = "chat_record.json"
 MOMENTS_FILE = "moments.json"
 CHECKIN_FILE = "checkin_data.json"
+MOMENTS_VIDEOS_DIR = "moments_videos"
 
 # ====================== 默认用户（bcrypt 哈希，仅供首次运行） ======================
 DEFAULT_USERS = {
