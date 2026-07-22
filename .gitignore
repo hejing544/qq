@@ -1,0 +1,38 @@
+# ====================== Python（client） ======================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Logs and temporary files
+*.log
+run_log.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ====================== Node（srv） ======================
+node_modules/
+.vite/
+
+# ====================== 运行时数据 ======================
+user_db.json
+chat_record.json
+srv/data/user_db.json
+
+# ====================== IDE ======================
+.vscode/
+.idea/
+.claude/
