@@ -28,6 +28,7 @@
             <th>头像</th>
             <th>账号</th>
             <th>昵称</th>
+            <th>状态</th>
             <th>性别</th>
             <th>年龄</th>
             <th>城市</th>
@@ -38,7 +39,7 @@
         </thead>
         <tbody>
           <tr v-if="filteredUsers.length === 0 && !loading">
-            <td colspan="10" class="empty-cell">
+            <td colspan="11" class="empty-cell">
               <div class="empty-state">
                 <span class="empty-icon">📭</span>
                 <p v-if="searchText">没有匹配的用户</p>
@@ -56,6 +57,12 @@
             <td class="account-cell">{{ user.account }}</td>
             <td class="nickname-cell">
               <span class="nickname">{{ user.nickname }}</span>
+            </td>
+            <td>
+              <span class="status-badge" :class="{ online: user.online }">
+                <span class="status-dot"></span>
+                {{ user.online ? '在线' : '离线' }}
+              </span>
             </td>
             <td>
               <span class="gender-badge" :class="genderClass(user.gender)">
@@ -379,6 +386,35 @@ export default {
   text-overflow: ellipsis;
   color: #999;
   font-size: 13px;
+}
+
+/* 在线状态 */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  background: #f5f5f5;
+  color: #999;
+}
+
+.status-badge.online {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d9d9d9;
+}
+
+.status-badge.online .status-dot {
+  background: #52c41a;
+  box-shadow: 0 0 4px rgba(82, 196, 26, 0.6);
 }
 
 /* 性别 */

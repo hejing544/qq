@@ -194,6 +194,7 @@ export default {
         if (data.ok) {
           this.users = data.users;
           this.totalUsers = data.total;
+          this.onlineCount = data.onlineCount || this.users.filter(u => u.online).length;
         }
       } catch (e) {
         this.addLog('获取用户列表失败: ' + e.message);
@@ -245,8 +246,18 @@ export default {
               this.addLog(`用户已删除: ${msg.account}`);
               this.fetchUsers();
               break;
+            case 'user_online':
+              this.addLog(`用户上线: ${msg.account} (${msg.nickname})`);
+              this.updateUserOnlineStatus(msg.account, true);
+              this.onlineCount = Math.max(0, this.onlineCount + 1);
+              break;
+            case 'user_offline':
+              this.addLog(`用户离线: ${msg.account} (${msg.nickname})`);
+              this.updateUserOnlineStatus(msg.account, false);
+              this.onlineCount = Math.max(0, this.onlineCount - 1);
+              break;
             case 'connection_count':
-              this.onlineCount = msg.count;
+              // WebSocket 连接数（与心跳在线数不同）
               break;
           }
         } catch (e) {
@@ -269,6 +280,13 @@ export default {
       const time = new Date().toLocaleTimeString();
       this.logs.unshift(`[${time}] ${text}`);
       if (this.logs.length > 50) this.logs.pop();
+    },
+
+    updateUserOnlineStatus(account, online) {
+      const user = this.users.find(u => u.account === account);
+      if (user) {
+        user.online = online;
+      }
     },
 
     updateUptime() {

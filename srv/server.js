@@ -15,6 +15,8 @@ const wss = new WebSocketServer({ server });
 const PORT = 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const USER_DB_FILE = path.join(DATA_DIR, 'user_db.json');
+const HEARTBEAT_TIMEOUT = 60 * 1000;  // 60 秒无心跳视为离线
+const CLEANUP_INTERVAL = 10 * 1000;   // 每 10 秒清理一次过期在线状态
 
 // 确保数据目录存在
 if (!fs.existsSync(DATA_DIR)) {
@@ -91,7 +93,10 @@ function reloadUsers() {
   users = loadUsers();
 }
 
-// 广播用户列表更新（给所有 WebSocket 客户端）
+// 在线用户追踪：account -> { nickname, lastHeartbeat }
+const onlineUsers = new Map();
+
+// 广播给所有 WebSocket 客户端
 function broadcast(data) {
   wss.clients.forEach(client => {
     if (client.readyState === 1) {
@@ -100,11 +105,45 @@ function broadcast(data) {
   });
 }
 
+// 更新用户心跳
+function updateHeartbeat(account, nickname) {
+  const wasOnline = onlineUsers.has(account);
+  onlineUsers.set(account, {
+    nickname,
+    lastHeartbeat: Date.now()
+  });
+  if (!wasOnline) {
+    console.log(`用户上线: ${account} (${nickname})`);
+    broadcast({ type: 'user_online', account, nickname });
+  }
+}
+
+// 清理过期心跳（超过 HEARTBEAT_TIMEOUT 未更新则视为离线）
+function cleanupOfflineUsers() {
+  const now = Date.now();
+  for (const [account, info] of onlineUsers) {
+    if (now - info.lastHeartbeat > HEARTBEAT_TIMEOUT) {
+      onlineUsers.delete(account);
+      console.log(`用户离线: ${account} (${info.nickname})`);
+      broadcast({ type: 'user_offline', account, nickname: info.nickname });
+    }
+  }
+}
+
+// 定时清理
+setInterval(cleanupOfflineUsers, CLEANUP_INTERVAL);
+
+// 检查用户是否在线
+function isUserOnline(account) {
+  return onlineUsers.has(account);
+}
+
 // ============== REST API ==============
 
-// 获取所有用户（不含密码）
+// 获取所有用户（不含密码，含在线状态）
 app.get('/api/users', (req, res) => {
   reloadUsers();
+  const now = Date.now();
   const list = Object.values(users).map(u => ({
     account: u.account,
     nickname: u.nickname,
@@ -112,9 +151,10 @@ app.get('/api/users', (req, res) => {
     gender: u.gender,
     age: u.age,
     city: u.city,
-    createdAt: u.createdAt
+    createdAt: u.createdAt,
+    online: isUserOnline(u.account)
   }));
-  res.json({ ok: true, users: list, total: list.length });
+  res.json({ ok: true, users: list, total: list.length, onlineCount: onlineUsers.size });
 });
 
 // 获取单个用户
@@ -220,14 +260,48 @@ app.delete('/api/users/:account', (req, res) => {
 // 获取在线统计
 app.get('/api/stats', (req, res) => {
   reloadUsers();
-  const onlineCount = [...wss.clients].filter(c => c.readyState === 1).length;
+  const now = Date.now();
+  const onlineList = [];
+  for (const [account, info] of onlineUsers) {
+    onlineList.push({
+      account,
+      nickname: info.nickname,
+      onlineSeconds: Math.floor((now - info.lastHeartbeat) / 1000)
+    });
+  }
   res.json({
     ok: true,
     stats: {
       totalUsers: Object.keys(users).length,
-      onlineConnections: onlineCount
+      onlineCount: onlineUsers.size,
+      onlineUsers: onlineList
     }
   });
+});
+
+// 心跳上报
+app.post('/api/heartbeat', (req, res) => {
+  const { account, nickname } = req.body;
+  if (!account) {
+    return res.status(400).json({ ok: false, error: '账号不能为空' });
+  }
+  updateHeartbeat(account, nickname || account);
+  res.json({ ok: true, onlineCount: onlineUsers.size });
+});
+
+// 主动下线通知
+app.post('/api/heartbeat/offline', (req, res) => {
+  const { account } = req.body;
+  if (!account) {
+    return res.status(400).json({ ok: false, error: '账号不能为空' });
+  }
+  if (onlineUsers.has(account)) {
+    const info = onlineUsers.get(account);
+    onlineUsers.delete(account);
+    console.log(`用户主动下线: ${account} (${info.nickname})`);
+    broadcast({ type: 'user_offline', account, nickname: info.nickname });
+  }
+  res.json({ ok: true });
 });
 
 // ============== WebSocket ==============

@@ -42,6 +42,7 @@ from checkin_db import (
     get_checkin_status, do_checkin, get_month_records,
 )
 from calendar import monthrange
+from heartbeat import Heartbeat
 
 
 class MainWindow:
@@ -53,6 +54,7 @@ class MainWindow:
             self.root.title(f"QQ - {self.user['nickname']}")
             self.root.geometry(f"{MAIN_W}x{MAIN_H}")
             self.root.resizable(False, False)
+            self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
             self.current_page = "home"
             self.current_chat_target_account = None
@@ -69,6 +71,10 @@ class MainWindow:
             self.level_stars = self.user.get("level_stars", 0)
             self.level_timer_id = None
             self._start_level_timer()
+
+            # 心跳上报在线状态
+            self.heartbeat = Heartbeat(self.account, self.user.get("nickname", self.account))
+            self.heartbeat.start()
 
             self.side_frame = tk.Frame(self.root, bg=SIDEBAR_BG(), width=120)
             self.side_frame.pack(side="left", fill="y")
@@ -1559,6 +1565,19 @@ class MainWindow:
                 self.root.after_cancel(self.group_polling_id)
                 self.group_polling_id = None
             self._stop_level_timer()
+            self.heartbeat.stop()
             self.root.destroy()
             from login_window import run_login_window
             run_login_window()
+
+    def _on_close(self):
+        """窗口关闭（点击 X 按钮）"""
+        if self.polling_id:
+            self.root.after_cancel(self.polling_id)
+            self.polling_id = None
+        if self.group_polling_id:
+            self.root.after_cancel(self.group_polling_id)
+            self.group_polling_id = None
+        self._stop_level_timer()
+        self.heartbeat.stop()
+        self.root.destroy()
